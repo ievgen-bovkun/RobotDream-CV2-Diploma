@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+outputs/*
+!outputs/.gitkeep

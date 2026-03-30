@@ -1,0 +1,29 @@
+[project]
+name = "drone-tracking-demo"
+version = "0.1.0"
+description = "Streamlit-based diploma MVP for drone detection, approval, tracking, and guidance from prerecorded video."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "I. Bovkun" }
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.drone_tracking]
+title = "Drone Detection, Approval, Tracking, and Guidance Demo from Prerecorded Video"
+current_milestone = "Milestone 1 - Skeleton and Spec Foundation"
+ui_entrypoint = "app/app.py"
+requirements_file = "requirements.txt"
+outputs_dir = "outputs"
+specs_dir = "docs/specs"
+milestones_dir = "docs/milestones"
+decisions_dir = "docs/decisions"
+tests_dir = "tests"
+default_detection_threshold = 0.5
+default_frame_sampling_interval = 1
+supported_video_formats = ["mp4", "mov", "avi"]
+relative_paths_only = true
+portable_notes = "Keep all paths repo-relative so the same clone works on macOS and Windows without local edits."

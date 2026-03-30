@@ -2,6 +2,8 @@
 
 This repository contains the Milestone 1 foundation for a diploma-project MVP built with Streamlit and a modular computer-vision pipeline. The current goal is to keep the codebase clean, portable, and ready for small validated iterations.
 
+It processes prerecorded drone video to detect another drone in the field of view, confirm the target, track it, and generate simple visual guidance. The architecture is intentionally structured so the MVP can later be extended toward broader drone guidance tasks.
+
 ## Current Status
 
 - Milestone: `Milestone 1 - Skeleton and Spec Foundation`

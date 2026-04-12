@@ -16,6 +16,7 @@ def test_placeholder_orchestrator_generates_detection_and_tracking_preview() -> 
     )
 
     assert previews
+    assert previews[0].timestamp_seconds == 0.0
     assert any(preview.detections for preview in previews)
     assert any(preview.approved_target is not None for preview in previews)
     assert any(preview.tracking is not None for preview in previews)

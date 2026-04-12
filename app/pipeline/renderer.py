@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import cv2
+import numpy as np
+
+from app.domain.models import Detection
 from app.domain.models import GuidanceResult, TrackingResult
 
 
@@ -23,3 +27,57 @@ def build_overlay_lines(
         )
 
     return lines
+
+
+def annotate_detection_frame(
+    image: np.ndarray,
+    detection: Detection | None,
+    *,
+    header_text: str,
+    status_text: str,
+    color: tuple[int, int, int],
+) -> np.ndarray:
+    annotated = image.copy()
+
+    if detection is not None:
+        bbox = detection.bbox
+        cv2.rectangle(
+            annotated,
+            (int(bbox.x_min), int(bbox.y_min)),
+            (int(bbox.x_max), int(bbox.y_max)),
+            color,
+            3,
+        )
+        label = f"{detection.class_name} {detection.confidence:.2f}"
+        cv2.putText(
+            annotated,
+            label,
+            (int(bbox.x_min), max(28, int(bbox.y_min) - 12)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+
+    cv2.putText(
+        annotated,
+        header_text,
+        (24, 36),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        annotated,
+        status_text,
+        (24, 72),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        color,
+        2,
+        cv2.LINE_AA,
+    )
+    return annotated

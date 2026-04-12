@@ -4,18 +4,18 @@ from app.domain.models import ApprovedTarget, BoundingBox, TrackingResult
 
 
 class PlaceholderTracker:
-    """Simple tracker that drifts the approved box slightly to exercise downstream contracts."""
+    """Simple bridge tracker that keeps the latest detected box between detector refreshes."""
 
     def track(self, approved_target: ApprovedTarget, frame_index: int) -> TrackingResult:
         frame_delta = max(frame_index - approved_target.approval_frame, 0)
         bbox = approved_target.initial_bbox
         tracked_bbox = BoundingBox(
-            x_min=bbox.x_min + frame_delta * 2.0,
-            y_min=bbox.y_min + frame_delta * 1.0,
-            x_max=bbox.x_max + frame_delta * 2.0,
-            y_max=bbox.y_max + frame_delta * 1.0,
+            x_min=bbox.x_min,
+            y_min=bbox.y_min,
+            x_max=bbox.x_max,
+            y_max=bbox.y_max,
         )
-        confidence = max(0.5, approved_target.initial_confidence - frame_delta * 0.01)
+        confidence = max(0.0, approved_target.initial_confidence - frame_delta * 0.03)
         return TrackingResult(
             frame_index=frame_index,
             target_id=approved_target.target_id,

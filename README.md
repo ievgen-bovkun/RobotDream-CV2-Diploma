@@ -6,9 +6,15 @@ It processes prerecorded drone video to detect another drone in the field of vie
 
 ## Current Status
 
-- Milestone: `Milestone 1 - Skeleton and Spec Foundation`
-- Scope: project structure, app shell, typed models, placeholder pipeline modules, docs, and test scaffolding
-- Real video ingestion, detection, and tracking are intentionally deferred to later milestones
+- Primary completed milestones:
+  - `Milestone 1` foundation and typed contracts
+  - `Milestone 2` uploaded video handling and metadata extraction
+  - `Milestone 3` frame iteration and runtime chunk processing
+  - `Milestone 4` real detector integration and daylight benchmarking
+- Current in-progress work:
+  - `Milestone 6` bridge tracking and detector-refresh tuning
+  - `Milestone 7` guidance overlays and runtime synchronization
+- Research log: see [`docs/decisions/benchmark-log-2026-04-12.md`](docs/decisions/benchmark-log-2026-04-12.md) for current detector/video benchmark results and working runtime presets
 
 ## Shared Project Settings
 
@@ -51,7 +57,7 @@ project_root/
 ### macOS / Linux
 
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app/app.py
@@ -77,7 +83,9 @@ The current tests focus on deterministic logic that should remain stable as the 
 - config validation
 - frame sampling logic
 - guidance geometry math
-- placeholder orchestration flow
+- runtime chunk orchestration and UI state helpers
+
+For stable local behavior, use Python `3.11`. The repository pins this via [.python-version](/Users/i.bovkun/PycharmProjects/DroneTracking/.python-version) and [pyproject.toml](/Users/i.bovkun/PycharmProjects/DroneTracking/pyproject.toml). Avoid Python `3.14` for this project because it has already caused environment mismatches with detection dependencies.
 
 ## Milestone Workflow
 
@@ -93,9 +101,10 @@ For each milestone:
 
 The app currently provides:
 
-- a Streamlit shell with operator controls
-- typed config and domain models
-- a deterministic placeholder pipeline preview
-- a visible foundation for later video upload, detection, approval, and tracking work
+- uploaded video handling and metadata extraction
+- a Streamlit runtime UI with detection settings and progress state
+- incremental daytime YOLO detection with bridge tracking between detector refreshes
+- on-video bbox overlays, runtime counters, and pipeline preview cards
+- typed config and domain models for continued milestone work
 
-This is intentional: the structure is ready, but the project is still in the “safe foundation” phase.
+The project is past the pure skeleton phase and is now in a working daytime-baseline stage. Manual approval, export artifacts, stronger tracking, and thermal-specific tuning are still ahead.

@@ -75,3 +75,10 @@ class GuidanceResult:
     dy_pixels: float
     yaw_offset_deg_approx: float
     pitch_offset_deg_approx: float
+
+
+@dataclass(slots=True, frozen=True)
+class VideoFrame:
+    frame_index: int
+    timestamp_seconds: float
+    frame: object

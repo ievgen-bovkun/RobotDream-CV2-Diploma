@@ -8,6 +8,25 @@ from app.domain.config import ProcessingConfig
 def test_processing_config_defaults_are_valid() -> None:
     config = ProcessingConfig()
     config.validate()
+    assert config.camera_profile == "daylight"
+    assert config.detection_threshold == 0.55
+    assert config.frame_sampling_interval == 3
+    assert config.tracker_max_missed_refreshes == 3
+    assert config.input_size == 1280
+    assert config.nms_iou_threshold == 0.5
+    assert config.max_detections == 3
+    assert "fixed-wing UAV" in config.prompt_terms
+
+
+def test_processing_config_thermal_profile_resolves_thermal_presets() -> None:
+    config = ProcessingConfig(camera_profile="thermal")
+
+    config.validate()
+
+    assert config.input_size == 1536
+    assert config.nms_iou_threshold == 0.45
+    assert config.max_detections == 5
+    assert any("thermal" in prompt.lower() for prompt in config.prompt_terms)
 
 
 def test_processing_config_rejects_invalid_threshold() -> None:
@@ -15,3 +34,22 @@ def test_processing_config_rejects_invalid_threshold() -> None:
 
     with pytest.raises(ValueError):
         config.validate()
+
+
+def test_processing_config_rejects_invalid_max_detections() -> None:
+    config = ProcessingConfig(max_detections=0)
+
+    with pytest.raises(ValueError):
+        config.validate()
+
+
+def test_processing_config_rejects_negative_tracker_hold() -> None:
+    config = ProcessingConfig(tracker_max_missed_refreshes=-1)
+
+    with pytest.raises(ValueError):
+        config.validate()
+
+
+def test_processing_config_rejects_invalid_camera_profile() -> None:
+    with pytest.raises(ValueError):
+        ProcessingConfig(camera_profile="night_vision")

@@ -23,3 +23,11 @@ Each milestone should remain independently runnable, visibly testable, and small
 - Replace the current bridge tracker with an image-aware tracker so close-up targets keep scaling correctly instead of holding a stale bbox.
 - Add manual operator approval before long-running tracking so Milestone 5 matches the original product flow.
 - Split runtime progress into `video frame`, `displayed pipeline frame`, and `processed up to` so the UI never suggests the pipeline is ahead of the video.
+- Add device-specific acceleration profiles after the baseline tracker is stable:
+  - `Apple Silicon / M4 Pro` via `PyTorch MPS` on Metal
+  - `AMD Radeon RX 7900 XTX` via `ROCm`
+  - `NVIDIA Jetson Orin Nano` via `JetPack CUDA/TensorRT`
+  - `Raspberry Pi 5 AI HAT+` via the on-board `Hailo NPU`
+- Add a dedicated `GPU Acceleration and Device Profiles` milestone slice for benchmarking latency, supported backends, and model/export constraints on each target device.
+- Add fine-tuning for the detection model so daylight, thermal, rear-view, and hard-case clips can move beyond the generic baseline.
+- Add tracking-model evaluation and tuning so the project can move from the current bridge tracker toward a stronger image-aware or learned tracker once the guidance workflow is stable.

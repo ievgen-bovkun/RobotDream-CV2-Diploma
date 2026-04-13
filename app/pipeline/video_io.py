@@ -76,7 +76,7 @@ def suggest_runtime_detection_interval(
 def suggest_runtime_chunk_size(
     *,
     detection_interval: int,
-    detections_per_chunk: int = 4,
+    detections_per_chunk: int = 2,
 ) -> int:
     if detection_interval < 1:
         raise ValueError("detection_interval must be at least 1")

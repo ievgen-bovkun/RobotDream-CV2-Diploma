@@ -1,0 +1,6 @@
+profile_id = "plane_offset_camera"
+label = "Plane / Offset Camera"
+drone_type = "plane"
+camera_offset_x_px = 36.0
+camera_offset_y_px = -18.0
+control_model = "control_surfaces"

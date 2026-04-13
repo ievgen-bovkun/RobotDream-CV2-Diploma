@@ -13,7 +13,6 @@ def _default_state() -> dict[str, object]:
         "pending_full_reset": False,
         "is_processing_preview": False,
         "preview_frames": [],
-        "playback_speed": 1.0,
         "auto_replay": False,
         "play_request_nonce": 0,
         "pause_request_nonce": 0,
@@ -32,6 +31,7 @@ def _default_state() -> dict[str, object]:
         "processing_target": None,
         "processing_missed_detection_refreshes": 0,
         "processing_playback_started": False,
+        "processing_session": None,
     }
 
 
@@ -43,6 +43,7 @@ def initialize_session_state() -> None:
 
 def reset_session_state() -> None:
     next_uploader_nonce = int(st.session_state.get("uploader_nonce", 0)) + 1
+    release_processing_session()
     cleanup_persisted_video(st.session_state.get("current_video_path"))
     for key, value in _default_state().items():
         st.session_state[key] = value
@@ -86,6 +87,7 @@ def store_uploaded_video(
     video_bytes: bytes,
     metadata: VideoMetadata,
 ) -> None:
+    release_processing_session()
     cleanup_persisted_video(st.session_state.get("current_video_path"))
     persisted_video_path = persist_video_bytes(
         video_bytes=video_bytes,
@@ -99,7 +101,6 @@ def store_uploaded_video(
     st.session_state.current_video_path = persisted_video_path
     st.session_state.current_video_metadata = metadata
     st.session_state.preview_frames = []
-    st.session_state.playback_speed = 1.0
     st.session_state.auto_replay = False
     st.session_state.play_request_nonce = 0
     st.session_state.pause_request_nonce = 0
@@ -112,9 +113,11 @@ def store_uploaded_video(
     st.session_state.processing_target = None
     st.session_state.processing_missed_detection_refreshes = 0
     st.session_state.processing_playback_started = False
+    st.session_state.processing_session = None
 
 
 def clear_current_video() -> None:
+    release_processing_session()
     cleanup_persisted_video(st.session_state.get("current_video_path"))
     st.session_state.current_video_name = None
     st.session_state.current_video_type = None
@@ -123,7 +126,6 @@ def clear_current_video() -> None:
     st.session_state.current_video_path = None
     st.session_state.current_video_metadata = None
     st.session_state.preview_frames = []
-    st.session_state.playback_speed = 1.0
     st.session_state.auto_replay = False
     st.session_state.play_request_nonce = 0
     st.session_state.pause_request_nonce = 0
@@ -136,6 +138,7 @@ def clear_current_video() -> None:
     st.session_state.processing_target = None
     st.session_state.processing_missed_detection_refreshes = 0
     st.session_state.processing_playback_started = False
+    st.session_state.processing_session = None
     st.session_state.uploader_nonce = int(st.session_state.get("uploader_nonce", 0)) + 1
 
 
@@ -154,3 +157,16 @@ def begin_preview_processing() -> None:
 
 def finish_preview_processing() -> None:
     st.session_state.is_processing_preview = False
+    release_processing_session()
+
+
+def release_processing_session() -> None:
+    session = st.session_state.get("processing_session")
+    if session is None:
+        return
+
+    capture = getattr(session, "capture", None)
+    if capture is not None:
+        capture.release()
+
+    st.session_state.processing_session = None

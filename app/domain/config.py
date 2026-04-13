@@ -7,6 +7,8 @@ from typing import Any
 DEFAULT_HORIZONTAL_FOV_DEG = 78.0
 DEFAULT_VERTICAL_FOV_DEG = 49.0
 DEFAULT_CAMERA_PROFILE = "daylight"
+DEFAULT_DRONE_PROFILE_ID = "multicopter_center_camera"
+DEFAULT_CAMERA_OPTICS_PROFILE_ID = "standard_rectilinear"
 DEFAULT_DETECTOR_BACKEND = "yolo"
 DEFAULT_TARGET_CLASS_MODE = "one_class"
 SUPPORTED_CAMERA_PROFILES = ("daylight", "thermal")
@@ -49,7 +51,10 @@ def get_camera_profile_preset(camera_profile: str) -> dict[str, Any]:
 @dataclass(slots=True)
 class ProcessingConfig:
     camera_profile: str = DEFAULT_CAMERA_PROFILE
+    drone_profile_id: str = DEFAULT_DRONE_PROFILE_ID
+    camera_optics_profile_id: str = DEFAULT_CAMERA_OPTICS_PROFILE_ID
     detection_threshold: float = 0.55
+    acquisition_frame_interval: int = 2
     frame_sampling_interval: int = 3
     tracker_max_missed_refreshes: int = 3
     save_output_video: bool = False
@@ -79,8 +84,14 @@ class ProcessingConfig:
     def validate(self) -> None:
         if self.camera_profile not in SUPPORTED_CAMERA_PROFILES:
             raise ValueError(f"camera_profile must be one of {SUPPORTED_CAMERA_PROFILES}")
+        if not self.drone_profile_id.strip():
+            raise ValueError("drone_profile_id must not be blank")
+        if not self.camera_optics_profile_id.strip():
+            raise ValueError("camera_optics_profile_id must not be blank")
         if not 0.0 <= self.detection_threshold <= 1.0:
             raise ValueError("detection_threshold must be between 0.0 and 1.0")
+        if self.acquisition_frame_interval < 1:
+            raise ValueError("acquisition_frame_interval must be at least 1")
         if self.frame_sampling_interval < 1:
             raise ValueError("frame_sampling_interval must be at least 1")
         if self.tracker_max_missed_refreshes < 0:

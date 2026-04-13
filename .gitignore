@@ -11,6 +11,12 @@ venv/
 *.iml
 .DS_Store
 Thumbs.db
+.runtime-home/
+node_modules/
+output/playwright/*
+!output/playwright/.gitkeep
+output/playwright/report/
+test-results/
 
 outputs/*
 !outputs/.gitkeep

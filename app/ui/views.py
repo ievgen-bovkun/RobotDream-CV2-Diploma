@@ -8,7 +8,6 @@ from dataclasses import asdict
 from typing import Any
 
 import streamlit as st
-from streamlit.components.v1 import html as html_component
 
 from app.domain.config import ProcessingConfig
 from app.domain.models import VideoMetadata
@@ -16,10 +15,9 @@ from app.pipeline.orchestrator import FramePreview
 from app.ui.controls import UiActions
 from app.ui.state import get_current_video, get_uploader_key
 
-
-PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.5]
 PLAYER_HEIGHT_PX = 420
 RUNTIME_SIDE_PANEL_HEIGHT_PX = 560
+MAX_DEBUG_PREVIEW_CARDS = 18
 
 
 def render_runtime_styles() -> None:
@@ -58,10 +56,6 @@ def render_header() -> None:
     )
 
 
-def format_playback_speed(speed: float) -> str:
-    return f"x{speed:g}"
-
-
 def _format_file_size(size_bytes: int | None) -> str:
     if size_bytes is None:
         return "n/a"
@@ -76,7 +70,6 @@ def build_detection_log_entries(
     uploaded_video_name: str | None,
     uploaded_video_size: int | None,
     preview_frames: list[FramePreview],
-    playback_speed: float,
     auto_replay: bool,
     is_processing_preview: bool = False,
     processing_cursor_frame: int | None = None,
@@ -96,15 +89,10 @@ def build_detection_log_entries(
         runtime_status = "Video loaded and ready to process"
         video_label = f"{uploaded_video_name} ({_format_file_size(uploaded_video_size)})"
 
-    entries = [
-        ("Runtime Status", runtime_status),
-        ("Loaded Video", video_label),
-        ("Playback Speed", format_playback_speed(playback_speed)),
-        ("Auto Replay", "Enabled" if auto_replay else "Disabled"),
-    ]
+    entries = [("Status", runtime_status), ("Video", video_label)]
 
     if uploaded_video_name is not None and effective_interval:
-        entries.append(("Effective Detection Interval", f"every {effective_interval} frames"))
+        entries.append(("Refresh Every", f"{effective_interval} frames"))
 
     if (
         uploaded_video_name is not None
@@ -115,7 +103,7 @@ def build_detection_log_entries(
         safe_cursor = min(max(int(processing_cursor_frame or 0), 0), processing_total_frames)
         entries.append(
             (
-                "Processing Progress",
+                "Progress",
                 f"{safe_cursor}/{processing_total_frames} frames ({(safe_cursor / processing_total_frames) * 100:.0f}%)",
             )
         )
@@ -126,11 +114,13 @@ def build_detection_log_entries(
         entries.extend(
             [
                 ("Processed Frames", str(len(preview_frames))),
-                ("Latest Frame", str(latest_preview.frame_index)),
-                ("Latest Detections", str(len(latest_preview.detections))),
-                ("Tracking State", latest_status),
+                ("Frame", str(latest_preview.frame_index)),
+                ("Detections", str(len(latest_preview.detections))),
+                ("Track", latest_status),
             ]
         )
+
+    entries.append(("Replay", "On" if auto_replay else "Off"))
 
     return entries
 
@@ -170,6 +160,45 @@ def build_runtime_overlay_payload(preview_frames: list[FramePreview]) -> list[di
         )
 
     return overlay_payload
+
+
+def render_runtime_sync_bridge(
+    *,
+    player_storage_key: str | None,
+    preview_frames: list[FramePreview],
+) -> None:
+    if player_storage_key is None:
+        return
+
+    sync_storage_key = f"operator-runtime-video::{hashlib.sha1(player_storage_key.encode('utf-8')).hexdigest()}"
+    overlay_payload = build_runtime_overlay_payload(preview_frames)
+    bridge_html = f"""
+    <script>
+      const rootWindow = (() => {{
+        try {{
+          return window.parent || window;
+        }} catch (error) {{
+          return window;
+        }}
+      }})();
+      const runtimeStateBucketKey = "__operatorRuntimeSync";
+      const storageKey = {json.dumps(sync_storage_key)};
+      const overlayFrames = {json.dumps(overlay_payload)};
+
+      if (!rootWindow[runtimeStateBucketKey]) {{
+        rootWindow[runtimeStateBucketKey] = {{}};
+      }}
+      if (!rootWindow[runtimeStateBucketKey][storageKey]) {{
+        rootWindow[runtimeStateBucketKey][storageKey] = {{}};
+      }}
+
+      rootWindow[runtimeStateBucketKey][storageKey].overlayFrames = overlayFrames;
+      rootWindow[runtimeStateBucketKey][storageKey].overlayFrameIndex = overlayFrames.length
+        ? overlayFrames[overlayFrames.length - 1].frame_index
+        : 0;
+    </script>
+    """
+    st.iframe(bridge_html, height=1)
 
 
 def _preview_frame_html(preview: FramePreview, is_latest: bool) -> str:
@@ -224,95 +253,41 @@ def render_pipeline_preview_panel(
     player_storage_key: str | None,
     is_processing_preview: bool,
 ) -> None:
-    st.markdown("#### Pipeline Preview")
+    st.markdown("#### Processing Debug")
 
     if not preview_frames:
         if is_processing_preview:
-            st.info("Building preview frames from the uploaded video. The preview cards will appear here after this pass finishes.")
+            st.info("Building preview frames from the uploaded video. Debug cards will appear here after the first processed chunk.")
             return
-        st.info("Pipeline preview will appear here and auto-follow the latest processed state.")
+        st.info("Debug preview is empty until runtime processing begins.")
         return
 
+    visible_previews = preview_frames[-MAX_DEBUG_PREVIEW_CARDS:]
     cards_html = "".join(
-        _preview_frame_html(preview, is_latest=index == len(preview_frames) - 1)
-        for index, preview in enumerate(preview_frames)
-    )
-    preview_sync_key = (
-        f"operator-runtime-video::{hashlib.sha1(player_storage_key.encode('utf-8')).hexdigest()}"
-        if player_storage_key is not None
-        else None
+        _preview_frame_html(
+            preview,
+            is_latest=index == 0,
+        )
+        for index, preview in enumerate(reversed(visible_previews))
     )
 
     preview_html = f"""
-    <div id="pipeline-preview-scrollbox" style="height:{RUNTIME_SIDE_PANEL_HEIGHT_PX - 56}px;overflow-y:auto;padding-right:0.35rem;">
+    <div style="font-size:0.78rem;color:#475569;margin-bottom:0.55rem;">Showing the latest {len(visible_previews)} processed states. Full runtime history stays in memory but is not rendered into the DOM.</div>
+    <div id="pipeline-preview-scrollbox" style="height:{RUNTIME_SIDE_PANEL_HEIGHT_PX - 112}px;overflow-y:auto;padding-right:0.35rem;">
       <div style="display:flex;flex-direction:column;gap:0.8rem;">
         {cards_html}
       </div>
     </div>
-    <script>
-      const rootWindow = (() => {{
-        try {{
-          return window.parent || window;
-        }} catch (error) {{
-          return window;
-        }}
-      }})();
-      const runtimeStateBucketKey = "__operatorRuntimeSync";
-      const previewBox = document.getElementById("pipeline-preview-scrollbox");
-      const previewCards = Array.from(previewBox?.querySelectorAll(".pipeline-card") ?? []);
-      const syncStorageKey = {json.dumps(preview_sync_key)};
-      const currentTimeKey = syncStorageKey;
-      let lastActiveTimestamp = null;
-
-      const getRuntimeState = () => {{
-        const bucket = rootWindow[runtimeStateBucketKey] ?? {{}};
-        return currentTimeKey ? (bucket[currentTimeKey] ?? {{}}) : {{}};
-      }};
-
-      const updatePreviewState = () => {{
-        if (!previewCards.length) {{
-          return;
-        }}
-
-        const runtimeState = getRuntimeState();
-        let currentTime = currentTimeKey ? Number(runtimeState.currentTime ?? "0") : Number.MAX_SAFE_INTEGER;
-        if (Number.isNaN(currentTime)) {{
-          currentTime = 0;
-        }}
-
-        let activeCard = previewCards[0];
-        for (const card of previewCards) {{
-          const timestamp = Number(card.dataset.timestamp ?? "0");
-          if (!Number.isNaN(timestamp) && timestamp <= currentTime + 0.05) {{
-            activeCard = card;
-          }}
-        }}
-
-        for (const card of previewCards) {{
-          const isActive = card === activeCard;
-          card.style.background = isActive ? "#dbeafe" : "#ffffff";
-          card.style.borderColor = isActive ? "rgba(37, 99, 235, 0.45)" : "rgba(148,163,184,0.22)";
-        }}
-
-        const activeTimestamp = activeCard?.dataset.timestamp ?? null;
-        if (activeCard && previewBox && activeTimestamp !== lastActiveTimestamp) {{
-          lastActiveTimestamp = activeTimestamp;
-          activeCard.scrollIntoView({{ block: "nearest", behavior: "smooth" }});
-        }}
-      }};
-
-      updatePreviewState();
-      window.setInterval(updatePreviewState, 300);
-    </script>
     """
-    html_component(preview_html, height=RUNTIME_SIDE_PANEL_HEIGHT_PX)
+    st.iframe(preview_html, height=RUNTIME_SIDE_PANEL_HEIGHT_PX)
 
 
 def render_runtime_counters_panel(
     *,
     player_storage_key: str | None,
     metadata: VideoMetadata | None,
-    preview_ready: bool,
+    processed_up_to_frame: int | None,
+    displayed_overlay_frame: int | None,
 ) -> None:
     if player_storage_key is None or metadata is None or metadata.fps <= 0:
         st.caption("Video frame and pipeline frame counters will appear here during runtime.")
@@ -322,14 +297,18 @@ def render_runtime_counters_panel(
     counters_html = f"""
     <div style="padding:0.85rem 0.95rem;border-radius:0.9rem;border:1px solid rgba(148,163,184,0.22);background:#f8fafc;">
       <div style="font-size:0.85rem;font-weight:700;color:#0f172a;margin-bottom:0.55rem;">Runtime Counters</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.65rem;">
         <div style="padding:0.65rem 0.75rem;border-radius:0.75rem;background:#ffffff;border:1px solid rgba(148,163,184,0.18);">
           <div style="font-size:0.78rem;color:#475569;margin-bottom:0.2rem;">Video Frame</div>
           <div id="video-frame-counter" style="font-size:1.1rem;font-weight:800;color:#0f172a;">0</div>
         </div>
         <div style="padding:0.65rem 0.75rem;border-radius:0.75rem;background:#ffffff;border:1px solid rgba(148,163,184,0.18);">
-          <div style="font-size:0.78rem;color:#475569;margin-bottom:0.2rem;">Pipeline Frame</div>
-          <div id="pipeline-frame-counter" style="font-size:1.1rem;font-weight:800;color:#0f172a;">0</div>
+          <div style="font-size:0.78rem;color:#475569;margin-bottom:0.2rem;">Processed Up To</div>
+          <div style="font-size:1.1rem;font-weight:800;color:#0f172a;">{int(processed_up_to_frame or 0)}</div>
+        </div>
+        <div style="padding:0.65rem 0.75rem;border-radius:0.75rem;background:#ffffff;border:1px solid rgba(148,163,184,0.18);">
+          <div style="font-size:0.78rem;color:#475569;margin-bottom:0.2rem;">Overlay Frame</div>
+          <div style="font-size:1.1rem;font-weight:800;color:#0f172a;">{int(displayed_overlay_frame or 0)}</div>
         </div>
       </div>
     </div>
@@ -344,9 +323,7 @@ def render_runtime_counters_panel(
       const runtimeStateBucketKey = "__operatorRuntimeSync";
       const syncStorageKey = {json.dumps(sync_storage_key)};
       const fps = {json.dumps(metadata.fps)};
-      const previewReady = {json.dumps(preview_ready)};
       const videoCounter = document.getElementById("video-frame-counter");
-      const pipelineCounter = document.getElementById("pipeline-frame-counter");
 
       const updateCounters = () => {{
         const bucket = rootWindow[runtimeStateBucketKey] ?? {{}};
@@ -357,160 +334,165 @@ def render_runtime_counters_panel(
         if (videoCounter) {{
           videoCounter.textContent = String(currentFrame);
         }}
-        if (pipelineCounter) {{
-          pipelineCounter.textContent = previewReady ? String(currentFrame) : "0";
-        }}
       }};
 
       updateCounters();
       window.setInterval(updateCounters, 200);
     </script>
     """
-    html_component(counters_html, height=118)
+    st.iframe(counters_html, height=118)
 
 
-def render_operator_runtime_block(
+def render_runtime_video_panel(
+    *,
+    preview_frames: list[FramePreview],
+    is_processing_preview: bool,
+) -> tuple[Any | None, UiActions, str | None]:
+    current_video = get_current_video()
+    pending_upload = None
+    start_processing = False
+    tactical_pause = False
+    reset_state = False
+    player_storage_key: str | None = None
+
+    if current_video is None:
+        pending_upload = st.file_uploader(
+            "Upload prerecorded drone video",
+            type=["mp4", "mov", "avi"],
+            key=get_uploader_key(),
+            help="Load a prerecorded clip into the operator runtime area.",
+            label_visibility="collapsed",
+        )
+        st.caption("Upload a prerecorded video to initialize the runtime player.")
+        action_col, pause_col, reset_col = st.columns(3)
+        start_processing = action_col.button(
+            "Processing..." if is_processing_preview else "Start Processing",
+            type="primary",
+            use_container_width=True,
+            disabled=True,
+        )
+        tactical_pause = pause_col.button(
+            "Tactical Pause",
+            use_container_width=True,
+            disabled=True,
+        )
+        reset_state = reset_col.button(
+            "Reset State",
+            use_container_width=True,
+        )
+    else:
+        player_storage_key = (
+            f"{current_video['name']}:{current_video['size']}:{st.session_state.uploader_nonce}:{st.session_state.player_session_nonce}"
+        )
+        st.caption("Play and pause from the built-in video controls.")
+        if is_processing_preview:
+            st.info("Building the runtime preview now. Live overlay may trail the video slightly while processing catches up.")
+        render_custom_video_player(
+            video_bytes=current_video["bytes"],
+            mime_type=current_video["type"],
+            auto_replay=bool(st.session_state.auto_replay),
+            play_request_nonce=int(st.session_state.play_request_nonce),
+            pause_request_nonce=int(st.session_state.pause_request_nonce),
+            player_storage_key=player_storage_key,
+            preview_frames=preview_frames,
+        )
+        st.toggle(
+            "Auto Replay",
+            key="auto_replay",
+            help="Replay automatically when the uploaded video reaches the end.",
+        )
+        action_col, pause_col, reset_col = st.columns(3)
+        start_processing = action_col.button(
+            "Processing..." if is_processing_preview else "Start Processing",
+            type="primary",
+            use_container_width=True,
+            disabled=is_processing_preview,
+        )
+        tactical_pause = pause_col.button(
+            "Tactical Pause",
+            use_container_width=True,
+            disabled=is_processing_preview,
+        )
+        reset_state = reset_col.button(
+            "Reset State",
+            use_container_width=True,
+            disabled=is_processing_preview,
+        )
+
+    return pending_upload, UiActions(
+        start_processing=start_processing,
+        reset_state=reset_state,
+        tactical_pause=tactical_pause,
+    ), player_storage_key
+
+
+def render_detection_log_panel(
+    *,
     preview_frames: list[FramePreview],
     metadata: VideoMetadata | None,
     is_processing_preview: bool,
     processing_cursor_frame: int | None,
     processing_total_frames: int | None,
     effective_interval: int | None,
-) -> tuple[Any | None, UiActions]:
+    debug_mode: bool,
+    player_storage_key: str | None,
+) -> None:
     current_video = get_current_video()
 
-    with st.container(border=True):
-        st.subheader("Operator Runtime Block")
-        video_col, preview_col, log_col = st.columns([2, 1, 1], gap="large")
+    with st.container(border=True, height=RUNTIME_SIDE_PANEL_HEIGHT_PX):
+        render_runtime_sync_bridge(
+            player_storage_key=player_storage_key,
+            preview_frames=preview_frames,
+        )
+        st.markdown("#### Detection Log")
+        render_runtime_counters_panel(
+            player_storage_key=player_storage_key,
+            metadata=metadata,
+            processed_up_to_frame=processing_cursor_frame,
+            displayed_overlay_frame=preview_frames[-1].frame_index if preview_frames else None,
+        )
+        st.divider()
+        detection_log_entries = build_detection_log_entries(
+            uploaded_video_name=current_video["name"] if current_video is not None else None,
+            uploaded_video_size=current_video["size"] if current_video is not None else None,
+            preview_frames=preview_frames,
+            auto_replay=bool(st.session_state.auto_replay),
+            is_processing_preview=is_processing_preview,
+            processing_cursor_frame=processing_cursor_frame,
+            processing_total_frames=processing_total_frames,
+            effective_interval=effective_interval,
+        )
+        for label, value in detection_log_entries:
+            st.markdown(f"**{label}:** {value}")
 
-        with video_col:
-            pending_upload = None
-            start_processing = False
-            tactical_pause = False
-            reset_state = False
-            player_storage_key: str | None = None
+        if debug_mode and preview_frames:
+            latest_preview = preview_frames[-1]
+            st.divider()
+            st.markdown("**Debug Events**")
+            for event in latest_preview.events[-3:]:
+                st.write(f"- [{event.stage}] {event.message}")
+        elif is_processing_preview:
+            st.caption("Processing is running. Debug details stay hidden unless Debug mode is enabled.")
+        else:
+            st.caption("Compact operator log. Enable Debug mode to inspect detailed runtime events.")
 
-            if current_video is None:
-                pending_upload = st.file_uploader(
-                    "Upload prerecorded drone video",
-                    type=["mp4", "mov", "avi"],
-                    key=get_uploader_key(),
-                    help="Load a prerecorded clip into the operator runtime area.",
-                    label_visibility="collapsed",
-                )
-                st.caption("Upload a prerecorded video to initialize the runtime player.")
-                action_col, pause_col, reset_col = st.columns(3)
-                start_processing = action_col.button(
-                    "Processing..." if is_processing_preview else "Start Processing",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=True,
-                )
-                tactical_pause = pause_col.button(
-                    "Tactical Pause",
-                    use_container_width=True,
-                    disabled=True,
-                )
-                reset_state = reset_col.button(
-                    "Reset State",
-                    use_container_width=True,
-                )
-            else:
-                player_storage_key = (
-                    f"{current_video['name']}:{current_video['size']}:{st.session_state.uploader_nonce}:{st.session_state.player_session_nonce}"
-                )
-                st.caption("Play and pause from the built-in video controls.")
-                if is_processing_preview:
-                    st.info("Building the runtime preview now. When processing finishes, the player will restart from frame 0.")
-                render_custom_video_player(
-                    video_bytes=current_video["bytes"],
-                    mime_type=current_video["type"],
-                    playback_speed=float(st.session_state.playback_speed),
-                    auto_replay=bool(st.session_state.auto_replay),
-                    play_request_nonce=int(st.session_state.play_request_nonce),
-                    pause_request_nonce=int(st.session_state.pause_request_nonce),
-                    player_storage_key=player_storage_key,
-                    preview_frames=preview_frames,
-                )
-                controls_col, autoplay_col = st.columns([5, 2], gap="small")
-                controls_col.segmented_control(
-                    "Playback speed",
-                    options=PLAYBACK_SPEED_OPTIONS,
-                    default=st.session_state.playback_speed,
-                    key="playback_speed",
-                    format_func=format_playback_speed,
-                    width="stretch",
-                )
-                autoplay_col.toggle(
-                    "Auto Replay",
-                    key="auto_replay",
-                    help="Replay automatically when the uploaded video reaches the end.",
-                )
-                action_col, pause_col, reset_col = st.columns(3)
-                start_processing = action_col.button(
-                    "Processing..." if is_processing_preview else "Start Processing",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=is_processing_preview,
-                )
-                tactical_pause = pause_col.button(
-                    "Tactical Pause",
-                    use_container_width=True,
-                    disabled=is_processing_preview,
-                )
-                reset_state = reset_col.button(
-                    "Reset State",
-                    use_container_width=True,
-                    disabled=is_processing_preview,
-                )
 
-        with preview_col:
-            with st.container(border=True, height=RUNTIME_SIDE_PANEL_HEIGHT_PX):
-                render_pipeline_preview_panel(
-                    preview_frames,
-                    player_storage_key=player_storage_key,
-                    is_processing_preview=is_processing_preview,
-                )
+def render_debug_preview_section(
+    *,
+    preview_frames: list[FramePreview],
+    player_storage_key: str | None,
+    is_processing_preview: bool,
+    debug_mode: bool,
+) -> None:
+    if not debug_mode:
+        return
 
-        with log_col:
-            with st.container(border=True, height=RUNTIME_SIDE_PANEL_HEIGHT_PX):
-                st.markdown("#### Detection Log")
-                render_runtime_counters_panel(
-                    player_storage_key=player_storage_key,
-                    metadata=metadata,
-                    preview_ready=bool(preview_frames),
-                )
-                st.divider()
-                detection_log_entries = build_detection_log_entries(
-                    uploaded_video_name=current_video["name"] if current_video is not None else None,
-                    uploaded_video_size=current_video["size"] if current_video is not None else None,
-                    preview_frames=preview_frames,
-                    playback_speed=float(st.session_state.playback_speed),
-                    auto_replay=bool(st.session_state.auto_replay),
-                    is_processing_preview=is_processing_preview,
-                    processing_cursor_frame=processing_cursor_frame,
-                    processing_total_frames=processing_total_frames,
-                    effective_interval=effective_interval,
-                )
-                for label, value in detection_log_entries:
-                    st.markdown(f"**{label}:** {value}")
-
-                if preview_frames:
-                    latest_preview = preview_frames[-1]
-                    st.divider()
-                    st.markdown("**Latest Runtime Events**")
-                    for event in latest_preview.events[-3:]:
-                        st.write(f"- [{event.stage}] {event.message}")
-                elif is_processing_preview:
-                    st.info("Runtime preview is being built. The first review pass will appear here when processing finishes.")
-                else:
-                    st.info("Processing updates will appear here once runtime preview generation begins.")
-
-    return pending_upload, UiActions(
-        start_processing=start_processing,
-        reset_state=reset_state,
-        tactical_pause=tactical_pause,
-    )
+    with st.expander("Debug Preview", expanded=False):
+        render_pipeline_preview_panel(
+            preview_frames,
+            player_storage_key=player_storage_key,
+            is_processing_preview=is_processing_preview,
+        )
 
 
 def render_other_details(config: ProcessingConfig, metadata: VideoMetadata) -> None:
@@ -542,7 +524,6 @@ def render_other_details(config: ProcessingConfig, metadata: VideoMetadata) -> N
 def render_custom_video_player(
     video_bytes: bytes,
     mime_type: str,
-    playback_speed: float,
     auto_replay: bool,
     play_request_nonce: int,
     pause_request_nonce: int,
@@ -553,8 +534,6 @@ def render_custom_video_player(
     sanitized_storage_key = hashlib.sha1(player_storage_key.encode("utf-8")).hexdigest()
     video_source = f"data:{mime_type};base64,{encoded_video}"
     overlay_payload = build_runtime_overlay_payload(preview_frames)
-    autoplay_attribute = "autoplay" if play_request_nonce > pause_request_nonce else ""
-
     player_html = f"""
     <div style="position:relative;border-radius: 1rem; overflow: hidden; background: #020617; border: 1px solid rgba(148, 163, 184, 0.28);">
       <video
@@ -562,7 +541,6 @@ def render_custom_video_player(
         controls
         muted
         playsinline
-        {autoplay_attribute}
         style="display:block;width:100%;height:{PLAYER_HEIGHT_PX}px;background:#020617;object-fit:contain;"
       >
         <source src="{html.escape(video_source)}" type="{html.escape(mime_type)}">
@@ -580,11 +558,10 @@ def render_custom_video_player(
       const runtimeStateBucketKey = "__operatorRuntimeSync";
       const video = document.getElementById("operator-runtime-video");
       const storageKey = {json.dumps(f"operator-runtime-video::{sanitized_storage_key}")};
-      const playbackSpeed = {json.dumps(playback_speed)};
       const autoReplay = {json.dumps(auto_replay)};
       const playRequestNonce = {json.dumps(play_request_nonce)};
       const pauseRequestNonce = {json.dumps(pause_request_nonce)};
-      const overlayFrames = {json.dumps(overlay_payload)};
+      const initialOverlayFrames = {json.dumps(overlay_payload)};
       const overlayLayer = document.getElementById("operator-runtime-overlay-layer");
 
       const ensureRuntimeState = () => {{
@@ -597,6 +574,8 @@ def render_custom_video_player(
             lastPlayRequest: 0,
             lastPauseRequest: 0,
             playing: false,
+            overlayFrames: initialOverlayFrames,
+            overlayFrameIndex: initialOverlayFrames.length ? initialOverlayFrames[initialOverlayFrames.length - 1].frame_index : 0,
           }};
         }}
         return rootWindow[runtimeStateBucketKey][storageKey];
@@ -616,14 +595,14 @@ def render_custom_video_player(
           video.currentTime = Math.min(parsedTime, Math.max(0, maxTime - 0.05));
         }}
         video.muted = true;
-        video.playbackRate = playbackSpeed;
+        video.playbackRate = 1.0;
         video.loop = autoReplay;
       }};
 
       const tryPlay = () => {{
         video.muted = true;
-        video.playbackRate = playbackSpeed;
-        video.autoplay = true;
+        video.playbackRate = 1.0;
+        video.autoplay = false;
         const playPromise = video.play();
         if (playPromise && typeof playPromise.catch === "function") {{
           playPromise.catch(() => null);
@@ -672,12 +651,14 @@ def render_custom_video_player(
           return;
         }}
 
+        const runtimeState = ensureRuntimeState();
+        const overlayFrames = Array.isArray(runtimeState.overlayFrames) ? runtimeState.overlayFrames : initialOverlayFrames;
+
         if (!overlayFrames.length) {{
           overlayLayer.innerHTML = "";
           return;
         }}
 
-        const runtimeState = ensureRuntimeState();
         const rawTime = Number(runtimeState.currentTime ?? video.currentTime ?? 0);
         const currentTime = Number.isNaN(rawTime) ? 0 : rawTime;
 
@@ -757,7 +738,10 @@ def render_custom_video_player(
       }});
       video.addEventListener("ended", () => {{
         if (!autoReplay) {{
-          updateRuntimeState({{ currentTime: 0, playing: false }});
+          updateRuntimeState({{
+            currentTime: Number(video.duration ?? video.currentTime ?? 0),
+            playing: false,
+          }});
         }} else {{
           updateRuntimeState({{ currentTime: 0, playing: true }});
         }}
@@ -773,7 +757,7 @@ def render_custom_video_player(
       window.setInterval(updateOverlay, 180);
     </script>
     """
-    html_component(player_html, height=PLAYER_HEIGHT_PX + 12)
+    st.iframe(player_html, height=PLAYER_HEIGHT_PX + 12)
 
 
 def render_preview_results(preview_frames: list[FramePreview]) -> None:

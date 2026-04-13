@@ -10,6 +10,52 @@ class Point:
 
 
 @dataclass(slots=True, frozen=True)
+class DroneProfile:
+    profile_id: str
+    label: str
+    drone_type: str
+    camera_offset_x_px: float
+    camera_offset_y_px: float
+    control_model: str
+
+    def validate(self) -> None:
+        if not self.profile_id.strip():
+            raise ValueError("profile_id must not be blank")
+        if self.drone_type not in {"multicopter", "plane"}:
+            raise ValueError("drone_type must be either 'multicopter' or 'plane'")
+        if self.control_model not in {"motors", "control_surfaces"}:
+            raise ValueError(
+                "control_model must be either 'motors' or 'control_surfaces'"
+            )
+
+
+@dataclass(slots=True, frozen=True)
+class CameraOpticsProfile:
+    profile_id: str
+    label: str
+    lens_model: str
+    horizontal_fov_deg: float
+    vertical_fov_deg: float
+    k1: float = 0.0
+    k2: float = 0.0
+    p1: float = 0.0
+    p2: float = 0.0
+    k3: float = 0.0
+
+    def validate(self) -> None:
+        if not self.profile_id.strip():
+            raise ValueError("profile_id must not be blank")
+        if self.lens_model not in {"rectilinear", "opencv_radial_tangential"}:
+            raise ValueError(
+                "lens_model must be either 'rectilinear' or 'opencv_radial_tangential'"
+            )
+        if not 0.0 < self.horizontal_fov_deg <= 180.0:
+            raise ValueError("horizontal_fov_deg must be between 0.0 and 180.0")
+        if not 0.0 < self.vertical_fov_deg <= 180.0:
+            raise ValueError("vertical_fov_deg must be between 0.0 and 180.0")
+
+
+@dataclass(slots=True, frozen=True)
 class BoundingBox:
     x_min: float
     y_min: float

@@ -11,6 +11,7 @@ from app.pipeline.guidance import calculate_guidance
 from app.pipeline.renderer import build_overlay_lines
 from app.pipeline.tracker import PlaceholderTracker
 from app.pipeline.video_io import iter_sampled_frame_indices, iter_sampled_video_frames, should_process_frame
+from app.services.profile_service import load_camera_optics_profile, load_drone_profile
 
 
 @dataclass(slots=True)
@@ -32,6 +33,12 @@ class ChunkProcessingResult:
     missed_detection_refreshes: int
     next_frame_index: int
     completed: bool
+
+
+@dataclass(slots=True)
+class RuntimeProcessingSession:
+    capture: cv2.VideoCapture
+    detector: BaseDetector
 
 
 class PlaceholderPipelineOrchestrator:
@@ -68,6 +75,8 @@ class PlaceholderPipelineOrchestrator:
 
         previews: list[FramePreview] = []
         approved_target: ApprovedTarget | None = None
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
 
         for frame_index in iter_sampled_frame_indices(
             frame_count=metadata.frame_count,
@@ -130,6 +139,8 @@ class PlaceholderPipelineOrchestrator:
                         bbox=tracking.bbox,
                         horizontal_fov_deg=config.horizontal_fov_deg,
                         vertical_fov_deg=config.vertical_fov_deg,
+                        drone_profile=drone_profile,
+                        camera_profile=camera_optics_profile,
                     )
                     events.append(
                         PipelineEvent(
@@ -167,6 +178,8 @@ class PlaceholderPipelineOrchestrator:
         previews: list[FramePreview] = []
         approved_target: ApprovedTarget | None = None
         runtime_detector = build_detector_for_config(config)
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
         target_id = "runtime-target-1"
         missed_detection_refreshes = 0
 
@@ -186,8 +199,12 @@ class PlaceholderPipelineOrchestrator:
             detections: list[Detection] = []
             run_detection = should_process_frame(
                 frame_index=video_frame.frame_index,
-                frame_sampling_interval=config.frame_sampling_interval,
-            ) or approved_target is None
+                frame_sampling_interval=(
+                    config.acquisition_frame_interval
+                    if approved_target is None
+                    else config.frame_sampling_interval
+                ),
+            )
 
             if run_detection:
                 detections = runtime_detector.detect(video_frame.frame_index, frame=video_frame.frame)
@@ -277,6 +294,8 @@ class PlaceholderPipelineOrchestrator:
                         bbox=tracking.bbox,
                         horizontal_fov_deg=config.horizontal_fov_deg,
                         vertical_fov_deg=config.vertical_fov_deg,
+                        drone_profile=drone_profile,
+                        camera_profile=camera_optics_profile,
                     )
                     events.append(
                         PipelineEvent(
@@ -324,6 +343,8 @@ class PlaceholderPipelineOrchestrator:
 
         previews: list[FramePreview] = []
         runtime_detector = build_detector_for_config(config)
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
         capture = cv2.VideoCapture(video_path)
         if not capture.isOpened():
             capture.release()
@@ -443,6 +464,8 @@ class PlaceholderPipelineOrchestrator:
                             bbox=tracking.bbox,
                             horizontal_fov_deg=config.horizontal_fov_deg,
                             vertical_fov_deg=config.vertical_fov_deg,
+                            drone_profile=drone_profile,
+                            camera_profile=camera_optics_profile,
                         )
                         events.append(
                             PipelineEvent(
@@ -472,6 +495,207 @@ class PlaceholderPipelineOrchestrator:
                 completed = True
         finally:
             capture.release()
+
+        return ChunkProcessingResult(
+            previews=previews,
+            approved_target=approved_target,
+            missed_detection_refreshes=missed_detection_refreshes,
+            next_frame_index=next_frame_index,
+            completed=completed,
+        )
+
+    def create_runtime_processing_session(
+        self,
+        *,
+        video_path: str,
+        config: ProcessingConfig,
+    ) -> RuntimeProcessingSession:
+        config.validate()
+        capture = cv2.VideoCapture(video_path)
+        if not capture.isOpened():
+            capture.release()
+            raise ValueError("Unable to open uploaded video for runtime processing")
+        return RuntimeProcessingSession(
+            capture=capture,
+            detector=build_detector_for_config(config),
+        )
+
+    @staticmethod
+    def close_runtime_processing_session(session: RuntimeProcessingSession | None) -> None:
+        if session is None:
+            return
+        session.capture.release()
+
+    def build_preview_chunk_from_session(
+        self,
+        *,
+        session: RuntimeProcessingSession,
+        metadata: VideoMetadata,
+        config: ProcessingConfig,
+        start_frame_index: int,
+        max_frames: int,
+        approved_target: ApprovedTarget | None = None,
+        missed_detection_refreshes: int = 0,
+        target_id: str = "runtime-target-1",
+    ) -> ChunkProcessingResult:
+        config.validate()
+        if start_frame_index < 0:
+            raise ValueError("start_frame_index cannot be negative")
+        if max_frames < 1:
+            raise ValueError("max_frames must be at least 1")
+
+        previews: list[FramePreview] = []
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
+        capture = session.capture
+        runtime_detector = session.detector
+
+        current_capture_frame = int(round(capture.get(cv2.CAP_PROP_POS_FRAMES)))
+        if current_capture_frame != start_frame_index:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, float(start_frame_index))
+
+        next_frame_index = start_frame_index
+        processed_frames = 0
+        completed = False
+
+        while processed_frames < max_frames:
+            ok, frame = capture.read()
+            if not ok:
+                completed = True
+                break
+
+            video_frame_index = next_frame_index
+            timestamp_seconds = (
+                video_frame_index / metadata.fps if metadata.fps > 0 else 0.0
+            )
+            events = [
+                PipelineEvent(
+                    stage="frame_iteration",
+                    message="Frame sampled from uploaded video.",
+                    frame_index=video_frame_index,
+                )
+            ]
+            detections: list[Detection] = []
+            run_detection = should_process_frame(
+                frame_index=video_frame_index,
+                frame_sampling_interval=(
+                    config.acquisition_frame_interval
+                    if approved_target is None
+                    else config.frame_sampling_interval
+                ),
+            )
+
+            if run_detection:
+                detections = runtime_detector.detect(video_frame_index, frame=frame)
+                if detections:
+                    had_target = approved_target is not None
+                    best_detection = max(detections, key=lambda detection: detection.confidence)
+                    approved_target = self._build_approved_target(
+                        best_detection,
+                        target_id=target_id,
+                    )
+                    missed_detection_refreshes = 0
+                    events.append(
+                        PipelineEvent(
+                            stage="detection",
+                            message=(
+                                f"{runtime_detector.backend_name} detection accepted on refresh frame "
+                                f"with confidence {best_detection.confidence:.2f}."
+                            ),
+                            frame_index=video_frame_index,
+                        )
+                    )
+                    events.append(
+                        PipelineEvent(
+                            stage="tracking_refresh" if had_target else "approval",
+                            message=(
+                                "Tracker anchor refreshed from the latest detection."
+                                if had_target
+                                else "Auto-approved the first confident detection and started tracking."
+                            ),
+                            frame_index=video_frame_index,
+                        )
+                    )
+                else:
+                    if approved_target is not None:
+                        missed_detection_refreshes += 1
+                    events.append(
+                        PipelineEvent(
+                            stage="detection",
+                            message="No detection on this refresh frame; tracker retained the last known target.",
+                            frame_index=video_frame_index,
+                        )
+                    )
+                    if (
+                        approved_target is not None
+                        and missed_detection_refreshes > config.tracker_max_missed_refreshes
+                    ):
+                        approved_target = None
+                        events.append(
+                            PipelineEvent(
+                                stage="tracking_lost",
+                                message="Tracking reset after consecutive detector refresh misses.",
+                                frame_index=video_frame_index,
+                            )
+                        )
+            else:
+                events.append(
+                    PipelineEvent(
+                        stage="tracking_bridge",
+                        message="Detection skipped on this frame; using tracker bridge until the next refresh frame.",
+                        frame_index=video_frame_index,
+                    )
+                )
+
+            tracking: TrackingResult | None = None
+            guidance: GuidanceResult | None = None
+
+            if approved_target is not None:
+                tracking = self.tracker.track(approved_target, video_frame_index)
+                events.append(
+                    PipelineEvent(
+                        stage="tracking",
+                        message="Tracker propagated the latest target state through the uploaded video timeline.",
+                        frame_index=video_frame_index,
+                    )
+                )
+
+                if tracking.bbox is not None:
+                    guidance = calculate_guidance(
+                        frame_index=video_frame_index,
+                        metadata=metadata,
+                        bbox=tracking.bbox,
+                        horizontal_fov_deg=config.horizontal_fov_deg,
+                        vertical_fov_deg=config.vertical_fov_deg,
+                        drone_profile=drone_profile,
+                        camera_profile=camera_optics_profile,
+                    )
+                    events.append(
+                        PipelineEvent(
+                            stage="guidance",
+                            message="Guidance offsets calculated against the uploaded video frame.",
+                            frame_index=video_frame_index,
+                        )
+                    )
+
+            previews.append(
+                FramePreview(
+                    frame_index=video_frame_index,
+                    timestamp_seconds=timestamp_seconds,
+                    detections=detections,
+                    approved_target=approved_target,
+                    tracking=tracking,
+                    guidance=guidance,
+                    overlay_lines=build_overlay_lines(tracking=tracking, guidance=guidance),
+                    events=events,
+                )
+            )
+
+            next_frame_index += 1
+            processed_frames += 1
+
+        if next_frame_index >= metadata.frame_count:
+            completed = True
 
         return ChunkProcessingResult(
             previews=previews,

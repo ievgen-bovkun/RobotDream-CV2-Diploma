@@ -5,12 +5,12 @@
 - Milestone 1: completed, repository foundation and typed contracts are in place
 - Milestone 2: completed, uploaded video handling and metadata extraction are working in the app
 - Milestone 3: completed, frame iteration and runtime chunk processing are wired into the UI
-- Milestone 4: completed, real YOLO baseline detection is integrated and benchmarked on daytime clips
+- Milestone 4: completed, real YOLO baseline detection is integrated and benchmarked across the current daylight clips, with the latest baseline captured in `docs/decisions/benchmark-log-2026-04-12.md`
 - Milestone 5: pending, manual target approval workflow is not implemented yet
-- Milestone 6: in progress, bridge tracking and detector refresh logic exist but need stronger tracker semantics
-- Milestone 7: in progress, guidance math and on-video overlays exist in baseline form
-- Milestone 8: pending, export and logs
-- Milestone 9: pending, hardening and regression safety
+- Milestone 6: in progress, bridge tracking, detector-refresh tuning, and tracker-hold defaults exist, but tracking still relies on a placeholder tracker and the rear-view hard case remains weak
+- Milestone 7: in progress, guidance math, runtime synchronization, and on-video overlays are wired into the Streamlit baseline, but the operator flow is still incomplete
+- Milestone 8: pending, export target naming and structured-log scaffolding exist, but there is no completed end-to-end export flow in the app yet
+- Milestone 9: in progress, deterministic unit and integration tests exist, but local `pytest` collection is currently broken because the repo does not yet expose the `app` package on the test import path
 
 ## Delivery Rule
 
@@ -22,6 +22,7 @@ Each milestone should remain independently runnable, visibly testable, and small
 - Add camera-profile-aware runtime presets so daylight RGB and thermal clips start with different YOLO and open-vocabulary prompt parameters.
 - Replace the current bridge tracker with an image-aware tracker so close-up targets keep scaling correctly instead of holding a stale bbox.
 - Add manual operator approval before long-running tracking so Milestone 5 matches the original product flow.
+- Fix local `pytest` collection by exposing the repo `app` package to the test runner, then restore a green baseline for regression safety.
 - Split runtime progress into `video frame`, `displayed pipeline frame`, and `processed up to` so the UI never suggests the pipeline is ahead of the video.
 - Add device-specific acceleration profiles after the baseline tracker is stable:
   - `Apple Silicon / M4 Pro` via `PyTorch MPS` on Metal

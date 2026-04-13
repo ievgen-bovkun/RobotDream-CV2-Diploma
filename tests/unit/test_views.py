@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from app.domain.models import BoundingBox, Detection, TrackingResult
 from app.pipeline.orchestrator import FramePreview
-from app.ui.views import build_detection_log_entries, build_runtime_overlay_payload, format_playback_speed
-
-
-def test_format_playback_speed_matches_runtime_ui_label() -> None:
-    assert format_playback_speed(1.0) == "x1"
-    assert format_playback_speed(0.25) == "x0.25"
+from app.ui.views import build_detection_log_entries, build_runtime_overlay_payload
 
 
 def test_detection_log_entries_show_waiting_state_without_video() -> None:
@@ -15,14 +10,12 @@ def test_detection_log_entries_show_waiting_state_without_video() -> None:
         uploaded_video_name=None,
         uploaded_video_size=None,
         preview_frames=[],
-        playback_speed=1.0,
         auto_replay=False,
     )
 
-    assert ("Runtime Status", "Awaiting uploaded video") in entries
-    assert ("Loaded Video", "No video loaded yet") in entries
-    assert ("Playback Speed", "x1") in entries
-    assert ("Auto Replay", "Disabled") in entries
+    assert ("Status", "Awaiting uploaded video") in entries
+    assert ("Video", "No video loaded yet") in entries
+    assert ("Replay", "Off") in entries
 
 
 def test_detection_log_entries_include_processing_summary() -> None:
@@ -30,15 +23,13 @@ def test_detection_log_entries_include_processing_summary() -> None:
         uploaded_video_name="demo.mp4",
         uploaded_video_size=3 * 1024 * 1024,
         preview_frames=[FramePreview(frame_index=15)],
-        playback_speed=0.5,
         auto_replay=True,
     )
 
-    assert ("Runtime Status", "Preview processed and ready for review") in entries
-    assert ("Playback Speed", "x0.5") in entries
-    assert ("Auto Replay", "Enabled") in entries
+    assert ("Status", "Preview processed and ready for review") in entries
+    assert ("Replay", "On") in entries
     assert ("Processed Frames", "1") in entries
-    assert ("Latest Frame", "15") in entries
+    assert ("Frame", "15") in entries
 
 
 def test_detection_log_entries_show_processing_state_while_preview_builds() -> None:
@@ -46,13 +37,12 @@ def test_detection_log_entries_show_processing_state_while_preview_builds() -> N
         uploaded_video_name="demo.mp4",
         uploaded_video_size=3 * 1024 * 1024,
         preview_frames=[],
-        playback_speed=1.0,
         auto_replay=False,
         is_processing_preview=True,
     )
 
-    assert ("Runtime Status", "Processing uploaded video preview") in entries
-    assert ("Loaded Video", "demo.mp4 (3.00 MB)") in entries
+    assert ("Status", "Processing uploaded video preview") in entries
+    assert ("Video", "demo.mp4 (3.00 MB)") in entries
 
 
 def test_runtime_overlay_payload_prefers_tracking_bbox_when_available() -> None:

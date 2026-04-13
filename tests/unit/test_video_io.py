@@ -25,5 +25,5 @@ def test_suggest_runtime_detection_interval_scales_for_higher_fps() -> None:
 
 
 def test_suggest_runtime_chunk_size_tracks_effective_interval() -> None:
-    assert suggest_runtime_chunk_size(detection_interval=3) == 12
-    assert suggest_runtime_chunk_size(detection_interval=6) == 24
+    assert suggest_runtime_chunk_size(detection_interval=3) == 6
+    assert suggest_runtime_chunk_size(detection_interval=6) == 12

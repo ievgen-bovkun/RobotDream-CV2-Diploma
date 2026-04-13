@@ -9,7 +9,6 @@ def test_default_state_includes_runtime_playback_defaults() -> None:
     assert default_state["pending_full_reset"] is False
     assert default_state["is_processing_preview"] is False
     assert default_state["preview_frames"] == []
-    assert default_state["playback_speed"] == 1.0
     assert default_state["auto_replay"] is False
     assert default_state["play_request_nonce"] == 0
     assert default_state["pause_request_nonce"] == 0
@@ -28,3 +27,4 @@ def test_default_state_includes_runtime_playback_defaults() -> None:
     assert default_state["processing_target"] is None
     assert default_state["processing_missed_detection_refreshes"] == 0
     assert default_state["processing_playback_started"] is False
+    assert default_state["processing_session"] is None

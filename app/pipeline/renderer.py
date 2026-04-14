@@ -25,6 +25,12 @@ def build_overlay_lines(
         lines.append(
             f"angle_offset_deg=(yaw={guidance.yaw_offset_deg_approx:.2f}, pitch={guidance.pitch_offset_deg_approx:.2f})"
         )
+        if guidance.estimated_range_m is not None:
+            lines.append(
+                f"estimated_range_m={guidance.estimated_range_m:.1f} ({guidance.range_estimation_method or 'unknown'})"
+            )
+        if guidance.target_profile_label is not None:
+            lines.append(f"target_profile={guidance.target_profile_label}")
 
     return lines
 

@@ -1,0 +1,10 @@
+profile_id = "wide_angle_drone"
+label = "Wide Angle Drone Camera"
+lens_model = "opencv_radial_tangential"
+horizontal_fov_deg = 120.0
+vertical_fov_deg = 80.0
+k1 = -0.32
+k2 = 0.10
+p1 = 0.0
+p2 = 0.0
+k3 = -0.02

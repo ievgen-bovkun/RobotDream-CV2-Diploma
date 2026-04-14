@@ -1,0 +1,11 @@
+{
+  "name": "drone-tracking-ui-tests",
+  "private": true,
+  "scripts": {
+    "test:ui": "playwright test",
+    "lint:ui-js": "python3 -m pytest tests/unit/test_embedded_player_script.py -q"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

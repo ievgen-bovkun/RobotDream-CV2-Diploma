@@ -7,14 +7,21 @@ from typing import Any
 DEFAULT_HORIZONTAL_FOV_DEG = 78.0
 DEFAULT_VERTICAL_FOV_DEG = 49.0
 DEFAULT_CAMERA_PROFILE = "daylight"
+DEFAULT_DRONE_PROFILE_ID = "multicopter_center_camera"
+DEFAULT_CAMERA_OPTICS_PROFILE_ID = "standard_rectilinear"
+DEFAULT_TARGET_PROFILE_ID = "shahed_136"
 DEFAULT_DETECTOR_BACKEND = "yolo"
 DEFAULT_TARGET_CLASS_MODE = "one_class"
 SUPPORTED_CAMERA_PROFILES = ("daylight", "thermal")
+SUPPORTED_INPUT_SIZES = {
+    "daylight": (768, 960, 1280),
+    "thermal": (960, 1280, 1536),
+}
 SUPPORTED_DETECTOR_BACKENDS = ("yolo", "open_vocab")
 SUPPORTED_TARGET_CLASS_MODES = ("one_class",)
 CAMERA_PROFILE_PRESETS = {
     "daylight": {
-        "input_size": 1280,
+        "input_size": 768,
         "nms_iou_threshold": 0.5,
         "max_detections": 3,
         "prompt_terms": (
@@ -46,12 +53,23 @@ def get_camera_profile_preset(camera_profile: str) -> dict[str, Any]:
     return CAMERA_PROFILE_PRESETS[camera_profile]
 
 
+def get_supported_input_sizes(camera_profile: str) -> tuple[int, ...]:
+    if camera_profile not in SUPPORTED_CAMERA_PROFILES:
+        raise ValueError(f"camera_profile must be one of {SUPPORTED_CAMERA_PROFILES}")
+    return SUPPORTED_INPUT_SIZES[camera_profile]
+
+
 @dataclass(slots=True)
 class ProcessingConfig:
     camera_profile: str = DEFAULT_CAMERA_PROFILE
+    drone_profile_id: str = DEFAULT_DRONE_PROFILE_ID
+    camera_optics_profile_id: str = DEFAULT_CAMERA_OPTICS_PROFILE_ID
+    target_profile_id: str = DEFAULT_TARGET_PROFILE_ID
     detection_threshold: float = 0.55
     frame_sampling_interval: int = 3
     tracker_max_missed_refreshes: int = 3
+    auto_engagement: bool = False
+    engagement_distance_threshold_m: float = 2.0
     save_output_video: bool = False
     save_logs: bool = True
     debug_mode: bool = True
@@ -79,12 +97,20 @@ class ProcessingConfig:
     def validate(self) -> None:
         if self.camera_profile not in SUPPORTED_CAMERA_PROFILES:
             raise ValueError(f"camera_profile must be one of {SUPPORTED_CAMERA_PROFILES}")
+        if not self.drone_profile_id.strip():
+            raise ValueError("drone_profile_id must not be blank")
+        if not self.camera_optics_profile_id.strip():
+            raise ValueError("camera_optics_profile_id must not be blank")
+        if not self.target_profile_id.strip():
+            raise ValueError("target_profile_id must not be blank")
         if not 0.0 <= self.detection_threshold <= 1.0:
             raise ValueError("detection_threshold must be between 0.0 and 1.0")
         if self.frame_sampling_interval < 1:
             raise ValueError("frame_sampling_interval must be at least 1")
         if self.tracker_max_missed_refreshes < 0:
             raise ValueError("tracker_max_missed_refreshes must be at least 0")
+        if self.engagement_distance_threshold_m <= 0.0:
+            raise ValueError("engagement_distance_threshold_m must be positive")
         if self.detector_backend not in SUPPORTED_DETECTOR_BACKENDS:
             raise ValueError(
                 f"detector_backend must be one of {SUPPORTED_DETECTOR_BACKENDS}"

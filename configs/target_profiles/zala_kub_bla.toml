@@ -1,0 +1,7 @@
+profile_id = "zala_kub_bla"
+label = "ZALA KUB-BLA"
+wingspan_m = 1.211
+length_m = 0.95
+cruise_speed_kmh = 105.0
+average_speed_kmh = 95.0
+notes = "Open-source baseline for the ZALA KUB-BLA loitering munition."

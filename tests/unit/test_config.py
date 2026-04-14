@@ -9,10 +9,15 @@ def test_processing_config_defaults_are_valid() -> None:
     config = ProcessingConfig()
     config.validate()
     assert config.camera_profile == "daylight"
+    assert config.drone_profile_id == "multicopter_center_camera"
+    assert config.camera_optics_profile_id == "standard_rectilinear"
+    assert config.target_profile_id == "shahed_136"
     assert config.detection_threshold == 0.55
     assert config.frame_sampling_interval == 3
     assert config.tracker_max_missed_refreshes == 3
-    assert config.input_size == 1280
+    assert config.auto_engagement is False
+    assert config.engagement_distance_threshold_m == 2.0
+    assert config.input_size == 768
     assert config.nms_iou_threshold == 0.5
     assert config.max_detections == 3
     assert "fixed-wing UAV" in config.prompt_terms
@@ -50,6 +55,34 @@ def test_processing_config_rejects_negative_tracker_hold() -> None:
         config.validate()
 
 
+def test_processing_config_rejects_non_positive_engagement_distance() -> None:
+    config = ProcessingConfig(engagement_distance_threshold_m=0.0)
+
+    with pytest.raises(ValueError):
+        config.validate()
+
+
 def test_processing_config_rejects_invalid_camera_profile() -> None:
     with pytest.raises(ValueError):
         ProcessingConfig(camera_profile="night_vision")
+
+
+def test_processing_config_rejects_blank_drone_profile_id() -> None:
+    config = ProcessingConfig(drone_profile_id=" ")
+
+    with pytest.raises(ValueError):
+        config.validate()
+
+
+def test_processing_config_rejects_blank_camera_optics_profile_id() -> None:
+    config = ProcessingConfig(camera_optics_profile_id=" ")
+
+    with pytest.raises(ValueError):
+        config.validate()
+
+
+def test_processing_config_rejects_blank_target_profile_id() -> None:
+    config = ProcessingConfig(target_profile_id=" ")
+
+    with pytest.raises(ValueError):
+        config.validate()

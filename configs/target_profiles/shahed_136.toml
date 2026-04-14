@@ -1,0 +1,7 @@
+profile_id = "shahed_136"
+label = "Shahed-136"
+wingspan_m = 2.5
+length_m = 3.5
+cruise_speed_kmh = 185.0
+average_speed_kmh = 170.0
+notes = "Open-source baseline used as the current hardcoded target profile."

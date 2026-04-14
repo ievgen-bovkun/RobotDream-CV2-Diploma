@@ -5,12 +5,17 @@ import cv2
 
 from app.domain.config import ProcessingConfig
 from app.domain.events import PipelineEvent
-from app.domain.models import ApprovedTarget, Detection, GuidanceResult, TrackingResult, VideoMetadata
+from app.domain.models import ApprovedTarget, Detection, GuidanceCommand, GuidanceResult, TrackingResult, VideoMetadata
 from app.pipeline.detector import BaseDetector, build_detector_for_config, PlaceholderDetector
-from app.pipeline.guidance import calculate_guidance
+from app.pipeline.guidance import calculate_guidance, calculate_guidance_command
 from app.pipeline.renderer import build_overlay_lines
-from app.pipeline.tracker import PlaceholderTracker
+from app.pipeline.tracker import BaseTracker, BridgeTracker
 from app.pipeline.video_io import iter_sampled_frame_indices, iter_sampled_video_frames, should_process_frame
+from app.services.profile_service import (
+    load_camera_optics_profile,
+    load_drone_profile,
+    load_target_profile,
+)
 
 
 @dataclass(slots=True)
@@ -21,6 +26,7 @@ class FramePreview:
     approved_target: ApprovedTarget | None = None
     tracking: TrackingResult | None = None
     guidance: GuidanceResult | None = None
+    guidance_command: GuidanceCommand | None = None
     overlay_lines: list[str] = field(default_factory=list)
     events: list[PipelineEvent] = field(default_factory=list)
 
@@ -40,23 +46,10 @@ class PlaceholderPipelineOrchestrator:
     def __init__(
         self,
         detector: BaseDetector | None = None,
-        tracker: PlaceholderTracker | None = None,
+        tracker: BaseTracker | None = None,
     ) -> None:
         self.detector = detector or PlaceholderDetector()
-        self.tracker = tracker or PlaceholderTracker()
-
-    @staticmethod
-    def _build_approved_target(
-        detection: Detection,
-        *,
-        target_id: str,
-    ) -> ApprovedTarget:
-        return ApprovedTarget(
-            target_id=target_id,
-            approval_frame=detection.frame_index,
-            initial_bbox=detection.bbox,
-            initial_confidence=detection.confidence,
-        )
+        self.tracker = tracker or BridgeTracker()
 
     def build_preview(
         self,
@@ -65,6 +58,9 @@ class PlaceholderPipelineOrchestrator:
         max_processed_frames: int | None = 6,
     ) -> list[FramePreview]:
         config.validate()
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
+        target_profile = load_target_profile(config.target_profile_id)
 
         previews: list[FramePreview] = []
         approved_target: ApprovedTarget | None = None
@@ -96,11 +92,9 @@ class PlaceholderPipelineOrchestrator:
 
             if detections and approved_target is None:
                 best_detection = max(detections, key=lambda detection: detection.confidence)
-                approved_target = ApprovedTarget(
+                approved_target = self.tracker.initialize(
                     target_id="placeholder-target-1",
-                    approval_frame=frame_index,
-                    initial_bbox=best_detection.bbox,
-                    initial_confidence=best_detection.confidence,
+                    detection=best_detection,
                 )
                 events.append(
                     PipelineEvent(
@@ -112,9 +106,13 @@ class PlaceholderPipelineOrchestrator:
 
             tracking: TrackingResult | None = None
             guidance: GuidanceResult | None = None
+            guidance_command: GuidanceCommand | None = None
 
             if approved_target is not None:
-                tracking = self.tracker.track(approved_target, frame_index)
+                tracking = self.tracker.track(
+                    approved_target=approved_target,
+                    frame_index=frame_index,
+                )
                 events.append(
                     PipelineEvent(
                         stage="tracking",
@@ -130,6 +128,16 @@ class PlaceholderPipelineOrchestrator:
                         bbox=tracking.bbox,
                         horizontal_fov_deg=config.horizontal_fov_deg,
                         vertical_fov_deg=config.vertical_fov_deg,
+                        drone_profile=drone_profile,
+                        camera_profile=camera_optics_profile,
+                        target_profile=target_profile,
+                    )
+                    guidance_command = calculate_guidance_command(
+                        guidance=guidance,
+                        metadata=metadata,
+                        drone_profile=drone_profile,
+                        auto_engagement=config.auto_engagement,
+                        engagement_distance_threshold_m=config.engagement_distance_threshold_m,
                     )
                     events.append(
                         PipelineEvent(
@@ -147,6 +155,7 @@ class PlaceholderPipelineOrchestrator:
                     approved_target=approved_target,
                     tracking=tracking,
                     guidance=guidance,
+                    guidance_command=guidance_command,
                     overlay_lines=build_overlay_lines(tracking=tracking, guidance=guidance),
                     events=events,
                 )
@@ -163,6 +172,9 @@ class PlaceholderPipelineOrchestrator:
         mime_type: str | None = None,
     ) -> list[FramePreview]:
         config.validate()
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
+        target_profile = load_target_profile(config.target_profile_id)
 
         previews: list[FramePreview] = []
         approved_target: ApprovedTarget | None = None
@@ -195,9 +207,18 @@ class PlaceholderPipelineOrchestrator:
                 if detections:
                     had_target = approved_target is not None
                     best_detection = max(detections, key=lambda detection: detection.confidence)
-                    approved_target = self._build_approved_target(
-                        best_detection,
-                        target_id=target_id,
+                    approved_target = (
+                        self.tracker.refresh(
+                            approved_target=approved_target,
+                            detection=best_detection,
+                            frame=video_frame.frame,
+                        )
+                        if had_target and approved_target is not None
+                        else self.tracker.initialize(
+                            target_id=target_id,
+                            detection=best_detection,
+                            frame=video_frame.frame,
+                        )
                     )
                     missed_detection_refreshes = 0
                     events.append(
@@ -241,6 +262,7 @@ class PlaceholderPipelineOrchestrator:
                         and missed_detection_refreshes > config.tracker_max_missed_refreshes
                     ):
                         approved_target = None
+                        self.tracker.reset()
                         events.append(
                             PipelineEvent(
                                 stage="tracking_lost",
@@ -259,9 +281,14 @@ class PlaceholderPipelineOrchestrator:
 
             tracking: TrackingResult | None = None
             guidance: GuidanceResult | None = None
+            guidance_command: GuidanceCommand | None = None
 
             if approved_target is not None:
-                tracking = self.tracker.track(approved_target, video_frame.frame_index)
+                tracking = self.tracker.track(
+                    approved_target=approved_target,
+                    frame_index=video_frame.frame_index,
+                    frame=video_frame.frame,
+                )
                 events.append(
                     PipelineEvent(
                         stage="tracking",
@@ -277,6 +304,16 @@ class PlaceholderPipelineOrchestrator:
                         bbox=tracking.bbox,
                         horizontal_fov_deg=config.horizontal_fov_deg,
                         vertical_fov_deg=config.vertical_fov_deg,
+                        drone_profile=drone_profile,
+                        camera_profile=camera_optics_profile,
+                        target_profile=target_profile,
+                    )
+                    guidance_command = calculate_guidance_command(
+                        guidance=guidance,
+                        metadata=metadata,
+                        drone_profile=drone_profile,
+                        auto_engagement=config.auto_engagement,
+                        engagement_distance_threshold_m=config.engagement_distance_threshold_m,
                     )
                     events.append(
                         PipelineEvent(
@@ -294,6 +331,7 @@ class PlaceholderPipelineOrchestrator:
                     approved_target=approved_target,
                     tracking=tracking,
                     guidance=guidance,
+                    guidance_command=guidance_command,
                     overlay_lines=build_overlay_lines(tracking=tracking, guidance=guidance),
                     events=events,
                 )
@@ -317,6 +355,9 @@ class PlaceholderPipelineOrchestrator:
     ) -> ChunkProcessingResult:
         del filename, mime_type
         config.validate()
+        drone_profile = load_drone_profile(config.drone_profile_id)
+        camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
+        target_profile = load_target_profile(config.target_profile_id)
         if start_frame_index < 0:
             raise ValueError("start_frame_index cannot be negative")
         if max_frames < 1:
@@ -366,9 +407,18 @@ class PlaceholderPipelineOrchestrator:
                     if detections:
                         had_target = approved_target is not None
                         best_detection = max(detections, key=lambda detection: detection.confidence)
-                        approved_target = self._build_approved_target(
-                            best_detection,
-                            target_id=target_id,
+                        approved_target = (
+                            self.tracker.refresh(
+                                approved_target=approved_target,
+                                detection=best_detection,
+                                frame=frame,
+                            )
+                            if had_target and approved_target is not None
+                            else self.tracker.initialize(
+                                target_id=target_id,
+                                detection=best_detection,
+                                frame=frame,
+                            )
                         )
                         missed_detection_refreshes = 0
                         events.append(
@@ -407,6 +457,7 @@ class PlaceholderPipelineOrchestrator:
                             and missed_detection_refreshes > config.tracker_max_missed_refreshes
                         ):
                             approved_target = None
+                            self.tracker.reset()
                             events.append(
                                 PipelineEvent(
                                     stage="tracking_lost",
@@ -425,9 +476,14 @@ class PlaceholderPipelineOrchestrator:
 
                 tracking: TrackingResult | None = None
                 guidance: GuidanceResult | None = None
+                guidance_command: GuidanceCommand | None = None
 
                 if approved_target is not None:
-                    tracking = self.tracker.track(approved_target, video_frame_index)
+                    tracking = self.tracker.track(
+                        approved_target=approved_target,
+                        frame_index=video_frame_index,
+                        frame=frame,
+                    )
                     events.append(
                         PipelineEvent(
                             stage="tracking",
@@ -443,6 +499,16 @@ class PlaceholderPipelineOrchestrator:
                             bbox=tracking.bbox,
                             horizontal_fov_deg=config.horizontal_fov_deg,
                             vertical_fov_deg=config.vertical_fov_deg,
+                            drone_profile=drone_profile,
+                            camera_profile=camera_optics_profile,
+                            target_profile=target_profile,
+                        )
+                        guidance_command = calculate_guidance_command(
+                            guidance=guidance,
+                            metadata=metadata,
+                            drone_profile=drone_profile,
+                            auto_engagement=config.auto_engagement,
+                            engagement_distance_threshold_m=config.engagement_distance_threshold_m,
                         )
                         events.append(
                             PipelineEvent(
@@ -460,6 +526,7 @@ class PlaceholderPipelineOrchestrator:
                         approved_target=approved_target,
                         tracking=tracking,
                         guidance=guidance,
+                        guidance_command=guidance_command,
                         overlay_lines=build_overlay_lines(tracking=tracking, guidance=guidance),
                         events=events,
                     )

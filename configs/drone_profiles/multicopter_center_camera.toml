@@ -1,0 +1,8 @@
+profile_id = "multicopter_center_camera"
+label = "Multicopter / Center Camera"
+drone_type = "multicopter"
+camera_offset_x_px = 0.0
+camera_offset_y_px = 0.0
+control_model = "motors"
+max_yaw_command_norm = 0.95
+max_pitch_command_norm = 0.90

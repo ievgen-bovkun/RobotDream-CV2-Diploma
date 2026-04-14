@@ -13,12 +13,13 @@ def _default_state() -> dict[str, object]:
         "pending_full_reset": False,
         "is_processing_preview": False,
         "preview_frames": [],
-        "playback_speed": 1.0,
         "auto_replay": False,
         "play_request_nonce": 0,
         "pause_request_nonce": 0,
         "player_session_nonce": 0,
         "uploader_nonce": 0,
+        "guidance_armed": False,
+        "guidance_arm_nonce": 0,
         "current_video_name": None,
         "current_video_type": None,
         "current_video_size": None,
@@ -99,11 +100,12 @@ def store_uploaded_video(
     st.session_state.current_video_path = persisted_video_path
     st.session_state.current_video_metadata = metadata
     st.session_state.preview_frames = []
-    st.session_state.playback_speed = 1.0
     st.session_state.auto_replay = False
     st.session_state.play_request_nonce = 0
     st.session_state.pause_request_nonce = 0
     st.session_state.player_session_nonce = 0
+    st.session_state.guidance_armed = False
+    st.session_state.guidance_arm_nonce = 0
     st.session_state.is_processing_preview = False
     st.session_state.processing_config_dict = None
     st.session_state.processing_cursor_frame = 0
@@ -123,11 +125,12 @@ def clear_current_video() -> None:
     st.session_state.current_video_path = None
     st.session_state.current_video_metadata = None
     st.session_state.preview_frames = []
-    st.session_state.playback_speed = 1.0
     st.session_state.auto_replay = False
     st.session_state.play_request_nonce = 0
     st.session_state.pause_request_nonce = 0
     st.session_state.player_session_nonce = 0
+    st.session_state.guidance_armed = False
+    st.session_state.guidance_arm_nonce = 0
     st.session_state.is_processing_preview = False
     st.session_state.processing_config_dict = None
     st.session_state.processing_cursor_frame = 0
@@ -145,6 +148,12 @@ def request_video_playback() -> None:
 
 def request_video_pause() -> None:
     st.session_state.pause_request_nonce = int(st.session_state.get("pause_request_nonce", 0)) + 1
+
+
+def toggle_guidance_armed() -> None:
+    next_state = not bool(st.session_state.get("guidance_armed", False))
+    st.session_state.guidance_armed = next_state
+    st.session_state.guidance_arm_nonce = int(st.session_state.get("guidance_arm_nonce", 0)) + 1
 
 
 def begin_preview_processing() -> None:

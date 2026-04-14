@@ -1,0 +1,7 @@
+profile_id = "gerbera"
+label = "Gerbera"
+wingspan_m = 2.0
+length_m = 2.0
+cruise_speed_kmh = 120.0
+average_speed_kmh = 100.0
+notes = "Open-source estimate; public reporting on Gerbera dimensions varies."

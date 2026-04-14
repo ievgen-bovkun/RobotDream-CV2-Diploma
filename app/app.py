@@ -9,11 +9,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.domain.config import ProcessingConfig
 from app.pipeline.orchestrator import PlaceholderPipelineOrchestrator
 from app.services.metadata_service import build_placeholder_metadata
 from app.services.metadata_service import extract_video_metadata
-from app.pipeline.video_io import suggest_runtime_chunk_size, suggest_runtime_detection_interval
 from app.ui.controls import render_detection_settings
 from app.ui.state import (
     begin_preview_processing,
@@ -21,9 +19,6 @@ from app.ui.state import (
     get_current_video,
     get_current_video_metadata,
     initialize_session_state,
-    request_full_reset,
-    request_video_pause,
-    request_video_playback,
     reset_session_state,
     store_uploaded_video,
 )
@@ -33,83 +28,6 @@ from app.ui.views import (
     render_other_details,
     render_runtime_styles,
 )
-
-
-def _get_active_config() -> ProcessingConfig:
-    config_dict = st.session_state.get("active_processing_config_dict")
-    if isinstance(config_dict, dict):
-        return ProcessingConfig(**config_dict)
-    return ProcessingConfig()
-
-
-def _start_incremental_processing(config: ProcessingConfig, metadata) -> None:
-    effective_interval = suggest_runtime_detection_interval(
-        source_fps=metadata.fps,
-        requested_interval=config.frame_sampling_interval,
-    )
-    begin_preview_processing()
-    st.session_state.preview_frames = []
-    st.session_state.processing_config_dict = config.to_dict()
-    st.session_state.processing_cursor_frame = 0
-    st.session_state.processing_effective_interval = effective_interval
-    st.session_state.processing_chunk_size = suggest_runtime_chunk_size(
-        detection_interval=effective_interval,
-    )
-    st.session_state.processing_target = None
-    st.session_state.processing_missed_detection_refreshes = 0
-    st.session_state.processing_playback_started = False
-    st.session_state.play_request_nonce = 0
-    st.session_state.pause_request_nonce = 0
-
-
-def _process_next_runtime_chunk(current_video: dict, metadata) -> None:
-    if not st.session_state.get("is_processing_preview"):
-        return
-
-    video_path = current_video.get("path")
-    if not video_path:
-        finish_preview_processing()
-        return
-
-    config_dict = st.session_state.get("processing_config_dict")
-    if not isinstance(config_dict, dict):
-        finish_preview_processing()
-        return
-
-    base_config = ProcessingConfig(**config_dict)
-    runtime_config = ProcessingConfig(
-        **{
-            **base_config.to_dict(),
-            "frame_sampling_interval": int(
-                st.session_state.get("processing_effective_interval", base_config.frame_sampling_interval)
-            ),
-        }
-    )
-
-    orchestrator = PlaceholderPipelineOrchestrator()
-    result = orchestrator.build_preview_chunk_from_video_path(
-        video_path=video_path,
-        metadata=metadata,
-        config=runtime_config,
-        start_frame_index=int(st.session_state.get("processing_cursor_frame", 0)),
-        max_frames=int(st.session_state.get("processing_chunk_size", runtime_config.frame_sampling_interval * 4)),
-        filename=current_video.get("name"),
-        mime_type=current_video.get("type"),
-        approved_target=st.session_state.get("processing_target"),
-        missed_detection_refreshes=int(st.session_state.get("processing_missed_detection_refreshes", 0)),
-    )
-
-    st.session_state.preview_frames.extend(result.previews)
-    st.session_state.processing_cursor_frame = result.next_frame_index
-    st.session_state.processing_target = result.approved_target
-    st.session_state.processing_missed_detection_refreshes = result.missed_detection_refreshes
-
-    if result.previews and not st.session_state.get("processing_playback_started", False):
-        request_video_playback()
-        st.session_state.processing_playback_started = True
-
-    if result.completed:
-        finish_preview_processing()
 
 
 def main() -> None:
@@ -132,15 +50,11 @@ def main() -> None:
         config = render_detection_settings()
         st.session_state.active_processing_config_dict = config.to_dict()
 
-    @st.fragment(run_every=0.5)
-    def runtime_fragment() -> None:
+    with runtime_container:
         current_video = get_current_video()
         metadata = get_current_video_metadata() or build_placeholder_metadata()
 
-        if st.session_state.get("is_processing_preview") and current_video is not None:
-            _process_next_runtime_chunk(current_video, metadata)
-
-        pending_upload, actions = render_operator_runtime_block(
+        pending_upload, _actions = render_operator_runtime_block(
             preview_frames=st.session_state.preview_frames,
             metadata=metadata,
             is_processing_preview=bool(st.session_state.is_processing_preview),
@@ -163,34 +77,25 @@ def main() -> None:
                 video_bytes=uploaded_bytes,
                 metadata=uploaded_metadata,
             )
-            st.rerun(scope="app")
 
-        if actions.reset_state:
-            request_full_reset()
-            st.rerun(scope="app")
-
-        if actions.tactical_pause:
-            request_video_pause()
-            st.rerun(scope="fragment")
-
-        if actions.start_processing:
-            if current_video is not None:
-                _start_incremental_processing(_get_active_config(), metadata)
-                _process_next_runtime_chunk(current_video, metadata)
-                st.rerun(scope="fragment")
-            else:
-                begin_preview_processing()
-                orchestrator = PlaceholderPipelineOrchestrator()
-                st.session_state.preview_frames = orchestrator.build_preview(
-                    metadata=metadata,
-                    config=_get_active_config(),
-                    max_processed_frames=None,
-                )
+            begin_preview_processing()
+            st.session_state.processing_cursor_frame = 0
+            st.session_state.processing_effective_interval = int(config.frame_sampling_interval)
+            try:
+                with st.spinner("Processing uploaded video and preparing tracking preview..."):
+                    orchestrator = PlaceholderPipelineOrchestrator()
+                    st.session_state.preview_frames = orchestrator.build_preview_from_video(
+                        video_bytes=uploaded_bytes,
+                        metadata=uploaded_metadata,
+                        config=config,
+                        filename=pending_upload.name,
+                        mime_type=pending_upload.type,
+                    )
+                    st.session_state.processing_cursor_frame = uploaded_metadata.frame_count
+            finally:
                 finish_preview_processing()
-                st.rerun(scope="fragment")
 
-    with runtime_container:
-        runtime_fragment()
+            st.rerun()
 
     with details_container:
         metadata = get_current_video_metadata() or build_placeholder_metadata()

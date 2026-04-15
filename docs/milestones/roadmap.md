@@ -11,6 +11,7 @@
 - Milestone 7: in progress, guidance overlays, target profiles, distance proxy, and control-signal emulation exist in advanced prototype form
 - Milestone 8: pending, export and logs
 - Milestone 9: pending, hardening and regression safety
+- Acceleration slice: completed for `Apple Silicon / MPS` baseline on `Python 3.13 + torch 2.11.0`, with preprocessing benchmarks captured for `768 / 960 / 1280`
 
 ## Delivery Rule
 
@@ -24,7 +25,7 @@ Each milestone should remain independently runnable, visibly testable, and small
 - Add explicit operator approval and target-selection workflow so Milestone 5 can evolve from the current single-target `Start Tracking` gate into a real approval step for one or many candidates.
 - Split runtime progress into `video frame`, `displayed pipeline frame`, and `processed up to` so the UI never suggests the pipeline is ahead of the video.
 - Add device-specific acceleration profiles after the baseline tracker is stable:
-  - `Apple Silicon / M4 Pro` via `PyTorch MPS` on Metal
+  - `Apple Silicon / M4 Pro` via `PyTorch MPS` on Metal: completed baseline enablement and preprocessing benchmark coverage
   - `AMD Radeon RX 7900 XTX` via `ROCm`
   - `NVIDIA Jetson Orin Nano` via `JetPack CUDA/TensorRT`
   - `Raspberry Pi 5 AI HAT+` via the on-board `Hailo NPU`

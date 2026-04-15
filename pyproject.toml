@@ -3,7 +3,7 @@ name = "drone-tracking-demo"
 version = "0.1.0"
 description = "Streamlit-based diploma MVP for drone detection, approval, tracking, and guidance from prerecorded video."
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11,<3.14"
 authors = [
   { name = "I. Bovkun" }
 ]

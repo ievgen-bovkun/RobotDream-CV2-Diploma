@@ -11,6 +11,7 @@ DEFAULT_DRONE_PROFILE_ID = "multicopter_center_camera"
 DEFAULT_CAMERA_OPTICS_PROFILE_ID = "standard_rectilinear"
 DEFAULT_TARGET_PROFILE_ID = "shahed_136"
 DEFAULT_DETECTOR_BACKEND = "yolo"
+DEFAULT_DETECTOR_DEVICE = "auto"
 DEFAULT_TARGET_CLASS_MODE = "one_class"
 SUPPORTED_CAMERA_PROFILES = ("daylight", "thermal")
 SUPPORTED_INPUT_SIZES = {
@@ -18,6 +19,7 @@ SUPPORTED_INPUT_SIZES = {
     "thermal": (960, 1280, 1536),
 }
 SUPPORTED_DETECTOR_BACKENDS = ("yolo", "open_vocab")
+SUPPORTED_DETECTOR_DEVICES = ("auto", "cpu", "mps")
 SUPPORTED_TARGET_CLASS_MODES = ("one_class",)
 CAMERA_PROFILE_PRESETS = {
     "daylight": {
@@ -74,6 +76,7 @@ class ProcessingConfig:
     save_logs: bool = True
     debug_mode: bool = True
     detector_backend: str = DEFAULT_DETECTOR_BACKEND
+    detector_device: str = DEFAULT_DETECTOR_DEVICE
     input_size: int | None = None
     nms_iou_threshold: float | None = None
     max_detections: int | None = None
@@ -114,6 +117,10 @@ class ProcessingConfig:
         if self.detector_backend not in SUPPORTED_DETECTOR_BACKENDS:
             raise ValueError(
                 f"detector_backend must be one of {SUPPORTED_DETECTOR_BACKENDS}"
+            )
+        if self.detector_device not in SUPPORTED_DETECTOR_DEVICES:
+            raise ValueError(
+                f"detector_device must be one of {SUPPORTED_DETECTOR_DEVICES}"
             )
         if self.input_size < 128:
             raise ValueError("input_size must be at least 128")

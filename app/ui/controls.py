@@ -6,6 +6,7 @@ import streamlit as st
 
 from app.domain.config import (
     ProcessingConfig,
+    SUPPORTED_DETECTOR_DEVICES,
     SUPPORTED_CAMERA_PROFILES,
     get_camera_profile_preset,
     get_supported_input_sizes,
@@ -29,6 +30,15 @@ class UiActions:
 
 def _format_camera_profile(camera_profile: str) -> str:
     return "Daylight RGB" if camera_profile == "daylight" else "Thermal"
+
+
+def _format_detector_device(device: str) -> str:
+    labels = {
+        "auto": "Auto",
+        "cpu": "CPU",
+        "mps": "Metal (MPS)",
+    }
+    return labels.get(device, device)
 
 
 def render_detection_settings() -> ProcessingConfig:
@@ -126,13 +136,25 @@ def render_detection_settings() -> ProcessingConfig:
             width="stretch",
             help="Smaller sizes preprocess faster; larger sizes keep more detail for hard detections.",
         )
-        tracker_max_missed_refreshes = mid_row[1].number_input(
+        detector_device = mid_row[1].segmented_control(
+            "Detector device",
+            options=list(SUPPORTED_DETECTOR_DEVICES),
+            default=defaults.detector_device,
+            format_func=_format_detector_device,
+            width="stretch",
+            help="Auto tries Metal first on Apple Silicon and falls back to CPU if unavailable.",
+        )
+        lower_row = st.columns(2)
+        tracker_max_missed_refreshes = lower_row[0].number_input(
             "Tracker hold after missed detections",
             min_value=0,
             max_value=12,
             value=int(defaults.tracker_max_missed_refreshes),
             step=1,
             help="Keep the current track alive for this many detector refresh misses before resetting it.",
+        )
+        st.caption(
+            f"Target profile locked for now: {target_profile.label}. Device default: {_format_detector_device(str(detector_device or defaults.detector_device))}."
         )
 
         bottom_row = st.columns(3)
@@ -152,6 +174,7 @@ def render_detection_settings() -> ProcessingConfig:
         target_profile_id=base_defaults.target_profile_id,
         detection_threshold=detection_threshold,
         frame_sampling_interval=int(frame_sampling_interval),
+        detector_device=str(detector_device or defaults.detector_device),
         input_size=int(input_size or defaults.input_size),
         tracker_max_missed_refreshes=int(tracker_max_missed_refreshes),
         auto_engagement=bool(auto_engagement),

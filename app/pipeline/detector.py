@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import torch
 from ultralytics import YOLO, YOLOWorld
 
 from app.domain.config import ProcessingConfig
@@ -31,6 +32,25 @@ def _load_cached_open_vocab_model(model_path: str, prompt_terms: tuple[str, ...]
 
 class DetectorUnavailableError(RuntimeError):
     """Raised when a detector backend cannot be loaded locally."""
+
+
+def resolve_detector_device(requested_device: str) -> str:
+    normalized_device = requested_device.strip().lower()
+    if normalized_device == "auto":
+        return "mps" if torch.backends.mps.is_available() else "cpu"
+    if normalized_device == "mps":
+        if not torch.backends.mps.is_built():
+            raise DetectorUnavailableError(
+                "This PyTorch build does not include MPS support. Reinstall an Apple Silicon PyTorch build."
+            )
+        if not torch.backends.mps.is_available():
+            raise DetectorUnavailableError(
+                "MPS was requested, but torch.backends.mps.is_available() is false in the current environment."
+            )
+        return "mps"
+    if normalized_device == "cpu":
+        return "cpu"
+    raise ValueError(f"Unsupported detector device: {requested_device}")
 
 
 class BaseDetector(ABC):
@@ -81,6 +101,7 @@ class UltralyticsDetector(BaseDetector, ABC):
         self.model_path = model_path
         self.config = config
         self._model: Any | None = None
+        self._resolved_device: str | None = None
 
     @property
     def model(self) -> Any:
@@ -92,6 +113,12 @@ class UltralyticsDetector(BaseDetector, ABC):
                 )
             self._model = self._load_model()
         return self._model
+
+    @property
+    def resolved_device(self) -> str:
+        if self._resolved_device is None:
+            self._resolved_device = resolve_detector_device(self.config.detector_device)
+        return self._resolved_device
 
     @abstractmethod
     def _load_model(self) -> Any:
@@ -110,7 +137,7 @@ class UltralyticsDetector(BaseDetector, ABC):
             iou=self.config.nms_iou_threshold,
             imgsz=self.config.input_size,
             max_det=self.config.max_detections,
-            device="cpu",
+            device=self.resolved_device,
             verbose=False,
         )[0]
 

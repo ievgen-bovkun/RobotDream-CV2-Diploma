@@ -8,6 +8,7 @@ from app.domain.config import (
     ProcessingConfig,
     SUPPORTED_DETECTOR_DEVICES,
     SUPPORTED_CAMERA_PROFILES,
+    SUPPORTED_TRACKER_BACKENDS,
     get_camera_profile_preset,
     get_supported_input_sizes,
 )
@@ -18,6 +19,7 @@ from app.services.profile_service import (
     load_drone_profile,
     load_target_profile,
 )
+from app.pipeline.tracker import is_csrt_available
 
 
 @dataclass(slots=True, frozen=True)
@@ -39,6 +41,14 @@ def _format_detector_device(device: str) -> str:
         "mps": "Metal (MPS)",
     }
     return labels.get(device, device)
+
+
+def _format_tracker_backend(tracker_backend: str) -> str:
+    labels = {
+        "bridge": "Bridge",
+        "csrt": "CSRT",
+    }
+    return labels.get(tracker_backend, tracker_backend)
 
 
 def render_detection_settings() -> ProcessingConfig:
@@ -153,8 +163,28 @@ def render_detection_settings() -> ProcessingConfig:
             step=1,
             help="Keep the current track alive for this many detector refresh misses before resetting it.",
         )
+        available_tracker_backends = tuple(
+            backend
+            for backend in SUPPORTED_TRACKER_BACKENDS
+            if backend != "csrt" or is_csrt_available()
+        )
+        selected_tracker_backend = (
+            defaults.tracker_backend
+            if defaults.tracker_backend in available_tracker_backends
+            else "bridge"
+        )
+        tracker_backend = lower_row[1].segmented_control(
+            "Tracker backend",
+            options=list(available_tracker_backends),
+            default=selected_tracker_backend,
+            format_func=_format_tracker_backend,
+            width="stretch",
+            help="Bridge holds the last detector bbox between refreshes. CSRT updates the bbox from the image after lock.",
+        )
+        if not is_csrt_available():
+            st.caption("CSRT tracker is hidden in this runtime because the current OpenCV build does not expose it.")
         st.caption(
-            f"Target profile locked for now: {target_profile.label}. Device default: {_format_detector_device(str(detector_device or defaults.detector_device))}."
+            f"Target profile locked for now: {target_profile.label}. Device default: {_format_detector_device(str(detector_device or defaults.detector_device))}. Tracker: {_format_tracker_backend(str(tracker_backend or defaults.tracker_backend))}."
         )
 
         bottom_row = st.columns(3)
@@ -175,6 +205,7 @@ def render_detection_settings() -> ProcessingConfig:
         detection_threshold=detection_threshold,
         frame_sampling_interval=int(frame_sampling_interval),
         detector_device=str(detector_device or defaults.detector_device),
+        tracker_backend=str(tracker_backend or defaults.tracker_backend),
         input_size=int(input_size or defaults.input_size),
         tracker_max_missed_refreshes=int(tracker_max_missed_refreshes),
         auto_engagement=bool(auto_engagement),

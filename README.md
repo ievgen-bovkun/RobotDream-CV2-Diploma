@@ -1,19 +1,21 @@
 # Drone Detection, Approval, Tracking, and Guidance Demo
 
-This repository contains the Milestone 1 foundation for a diploma-project MVP built with Streamlit and a modular computer-vision pipeline. The current goal is to keep the codebase clean, portable, and ready for small validated iterations.
+This repository contains a diploma-project MVP built with Streamlit and a modular computer-vision pipeline. The current codebase is in a presentation-ready state for prerecorded video detection, tracking, and guidance demos.
 
 It processes prerecorded drone video to detect another drone in the field of view, confirm the target, track it, and generate simple visual guidance. The architecture is intentionally structured so the MVP can later be extended toward broader drone guidance tasks.
 
 ## Current Status
 
-- Primary completed milestones:
+- Completed demo milestones:
   - `Milestone 1` foundation and typed contracts
   - `Milestone 2` uploaded video handling and metadata extraction
-  - `Milestone 3` frame iteration and runtime chunk processing
-  - `Milestone 4` real detector integration and daylight benchmarking
-- Current in-progress work:
-  - `Milestone 6` bridge tracking and detector-refresh tuning
-  - `Milestone 7` guidance overlays and runtime synchronization
+  - `Milestone 3` preprocessing-based playback flow
+  - `Milestone 4` detector integration, daylight tuning, thermal baseline, and Apple Silicon MPS acceleration
+  - `Milestone 5` single-target operator-go flow via `Start Tracking`
+  - `Milestone 6` bridge tracking with detector refresh and confidence-based stale-track cutoff
+  - `Milestone 7` guidance overlays, target/drone/camera profiles, camera-offset aim point, distance proxy, and mocked control-signal visualization
+- Experimental slice:
+  - `CSRT` tracker backend is available for comparison in the UI, but `Bridge` remains the safer demo default
 - Research log: see [`docs/decisions/benchmark-log-2026-04-12.md`](docs/decisions/benchmark-log-2026-04-12.md) for current detector/video benchmark results and working runtime presets
 
 ## Shared Project Settings
@@ -85,7 +87,7 @@ The current tests focus on deterministic logic that should remain stable as the 
 - guidance geometry math
 - runtime chunk orchestration and UI state helpers
 
-For stable local behavior, use Python `3.11`. The repository pins this via [.python-version](/Users/i.bovkun/PycharmProjects/DroneTracking/.python-version) and [pyproject.toml](/Users/i.bovkun/PycharmProjects/DroneTracking/pyproject.toml). Avoid Python `3.14` for this project because it has already caused environment mismatches with detection dependencies.
+For stable local behavior on Apple Silicon, use [`.venv-313`](/Users/i.bovkun/PycharmProjects/DroneTracking/.venv-313) with Python `3.13` and the current PyTorch `MPS` stack. Avoid Python `3.14` for this project because it has already caused environment mismatches with detection dependencies.
 
 ## Milestone Workflow
 
@@ -102,9 +104,11 @@ For each milestone:
 The app currently provides:
 
 - uploaded video handling and metadata extraction
-- a Streamlit runtime UI with detection settings and progress state
-- incremental daytime YOLO detection with bridge tracking between detector refreshes
-- on-video bbox overlays, runtime counters, and pipeline preview cards
+- preprocessing that starts immediately after upload, with playback unlocked after preview generation
+- `open_vocab` daylight detection defaults and benchmarked thermal baseline presets
+- `Bridge` tracking with confidence-based stale-track cutoff and optional `CSRT` comparison mode
+- on-video bbox overlays, distance estimate, guidance line, and control-signal emulator
+- drone profiles, camera optics profiles, and target profiles that feed the guidance math
 - typed config and domain models for continued milestone work
 
-The project is past the pure skeleton phase and is now in a working daytime-baseline stage. Manual approval, export artifacts, stronger tracking, and thermal-specific tuning are still ahead.
+The project is past the pure skeleton phase and is now in a presentation-ready prerecorded-video guidance stage. Export artifacts, stronger tracking semantics, and broader hardening remain backlog items after the demo.

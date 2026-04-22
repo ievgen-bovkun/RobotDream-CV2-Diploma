@@ -5,6 +5,8 @@ from typing import Any
 
 from app.domain.models import ApprovedTarget, BoundingBox, Detection, TrackingResult
 
+BRIDGE_TRACKING_CONFIDENCE_FLOOR = 0.40
+
 
 class BaseTracker(ABC):
     """Tracking contract kept intentionally small so implementations stay swappable."""
@@ -74,6 +76,14 @@ class BridgeTracker(BaseTracker):
             y_max=bbox.y_max,
         )
         confidence = max(0.0, approved_target.initial_confidence - frame_delta * 0.03)
+        if confidence < BRIDGE_TRACKING_CONFIDENCE_FLOOR:
+            return TrackingResult(
+                frame_index=frame_index,
+                target_id=approved_target.target_id,
+                bbox=None,
+                tracking_status="lost",
+                confidence=confidence,
+            )
         return TrackingResult(
             frame_index=frame_index,
             target_id=approved_target.target_id,

@@ -10,7 +10,7 @@ DEFAULT_CAMERA_PROFILE = "daylight"
 DEFAULT_DRONE_PROFILE_ID = "multicopter_center_camera"
 DEFAULT_CAMERA_OPTICS_PROFILE_ID = "standard_rectilinear"
 DEFAULT_TARGET_PROFILE_ID = "shahed_136"
-DEFAULT_DETECTOR_BACKEND = "yolo"
+DEFAULT_DETECTOR_BACKEND = "open_vocab"
 DEFAULT_DETECTOR_DEVICE = "auto"
 DEFAULT_TARGET_CLASS_MODE = "one_class"
 SUPPORTED_CAMERA_PROFILES = ("daylight", "thermal")
@@ -23,15 +23,15 @@ SUPPORTED_DETECTOR_DEVICES = ("auto", "cpu", "mps")
 SUPPORTED_TARGET_CLASS_MODES = ("one_class",)
 CAMERA_PROFILE_PRESETS = {
     "daylight": {
-        "input_size": 768,
+        "input_size": 960,
         "nms_iou_threshold": 0.5,
         "max_detections": 3,
         "prompt_terms": (
             "fixed-wing UAV",
             "flying wing drone",
-            "rear view of UAV",
-            "top view of UAV",
+            "rear view of flying wing drone",
             "aircraft seen from behind",
+            "loitering munition",
         ),
     },
     "thermal": {

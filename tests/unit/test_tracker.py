@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.domain.models import BoundingBox, Detection
-from app.pipeline.tracker import BaseTracker, BridgeTracker
+from app.pipeline.tracker import BaseTracker, BRIDGE_TRACKING_CONFIDENCE_FLOOR, BridgeTracker
 
 
 def test_bridge_tracker_implements_base_tracker_contract() -> None:
@@ -45,3 +45,22 @@ def test_bridge_tracker_holds_latest_bbox_between_detection_refreshes() -> None:
     assert tracking.tracking_status == "tracking"
     assert tracking.confidence is not None
     assert 0.0 <= tracking.confidence < approved_target.initial_confidence
+
+
+def test_bridge_tracker_marks_track_lost_below_confidence_floor() -> None:
+    tracker = BridgeTracker()
+    detection = Detection(
+        frame_index=100,
+        bbox=BoundingBox(x_min=10.0, y_min=20.0, x_max=110.0, y_max=120.0),
+        confidence=0.9,
+        class_id=0,
+        class_name="airplane",
+    )
+    approved_target = tracker.initialize(target_id="target-1", detection=detection)
+
+    tracking = tracker.track(approved_target=approved_target, frame_index=117)
+
+    assert tracking.bbox is None
+    assert tracking.tracking_status == "lost"
+    assert tracking.confidence is not None
+    assert tracking.confidence < BRIDGE_TRACKING_CONFIDENCE_FLOOR

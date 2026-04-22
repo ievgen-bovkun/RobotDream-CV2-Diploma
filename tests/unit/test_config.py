@@ -17,11 +17,14 @@ def test_processing_config_defaults_are_valid() -> None:
     assert config.tracker_max_missed_refreshes == 3
     assert config.auto_engagement is False
     assert config.engagement_distance_threshold_m == 2.0
+    assert config.detector_backend == "open_vocab"
     assert config.detector_device == "auto"
-    assert config.input_size == 768
+    assert config.input_size == 960
     assert config.nms_iou_threshold == 0.5
     assert config.max_detections == 3
     assert "fixed-wing UAV" in config.prompt_terms
+    assert "rear view of flying wing drone" in config.prompt_terms
+    assert "loitering munition" in config.prompt_terms
 
 
 def test_processing_config_thermal_profile_resolves_thermal_presets() -> None:

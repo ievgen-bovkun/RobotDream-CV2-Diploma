@@ -9,7 +9,7 @@ from app.domain.models import ApprovedTarget, Detection, GuidanceCommand, Guidan
 from app.pipeline.detector import BaseDetector, build_detector_for_config, PlaceholderDetector
 from app.pipeline.guidance import calculate_guidance, calculate_guidance_command
 from app.pipeline.renderer import build_overlay_lines
-from app.pipeline.tracker import BaseTracker, BridgeTracker
+from app.pipeline.tracker import BaseTracker, BridgeTracker, build_tracker_for_config
 from app.pipeline.video_io import iter_sampled_frame_indices, iter_sampled_video_frames, should_process_frame
 from app.services.profile_service import (
     load_camera_optics_profile,
@@ -172,6 +172,7 @@ class PlaceholderPipelineOrchestrator:
         mime_type: str | None = None,
     ) -> list[FramePreview]:
         config.validate()
+        self.tracker = build_tracker_for_config(config)
         drone_profile = load_drone_profile(config.drone_profile_id)
         camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
         target_profile = load_target_profile(config.target_profile_id)
@@ -355,6 +356,7 @@ class PlaceholderPipelineOrchestrator:
     ) -> ChunkProcessingResult:
         del filename, mime_type
         config.validate()
+        self.tracker = build_tracker_for_config(config)
         drone_profile = load_drone_profile(config.drone_profile_id)
         camera_optics_profile = load_camera_optics_profile(config.camera_optics_profile_id)
         target_profile = load_target_profile(config.target_profile_id)
